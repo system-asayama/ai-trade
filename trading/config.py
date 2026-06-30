@@ -86,6 +86,11 @@ class Settings:
     atr_trail_mult: float = field(default_factory=lambda: _float_env("ATR_TRAIL_MULT", 2.0))
     max_open_positions: int = field(default_factory=lambda: _int_env("MAX_OPEN_POSITIONS", 2))
 
+    # --- Phase 5: ダマシ予測ML ---
+    fakeout_min_proba: float = field(
+        default_factory=lambda: _float_env("FAKEOUT_MIN_PROBA", 0.5)
+    )
+
     def __post_init__(self) -> None:
         if self.oanda_env not in OANDA_HOSTS:
             raise ValueError(

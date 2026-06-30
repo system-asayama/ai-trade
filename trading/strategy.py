@@ -98,9 +98,21 @@ def evaluate(
         "breakout": brk,
         "atr": atr_value,
         "atr_pct": atr_pct,
+        "adx": float(last.get("adx", 0.0) or 0.0),
+        "volume_ratio": _volume_ratio(trigger_df, settings.volume_lookback),
     }
     side = SIGNAL_BUY if mtf.aligned == TREND_UP else SIGNAL_SELL
     return Signal(side, price, atr_value, reason)
+
+
+def _volume_ratio(trigger_df: pd.DataFrame, lookback: int) -> float:
+    """直近バーの出来高が過去平均の何倍か（情報が無ければ 1.0）。"""
+    if "volume" not in trigger_df.columns or len(trigger_df) < lookback + 1:
+        return 1.0
+    recent = trigger_df["volume"].iloc[-(lookback + 1):-1].mean()
+    if recent <= 0:
+        return 1.0
+    return float(trigger_df["volume"].iloc[-1]) / recent
 
 
 def _atr_percentile(trigger_df: pd.DataFrame, window: int = 100) -> Optional[float]:

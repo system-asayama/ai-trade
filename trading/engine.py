@@ -48,6 +48,8 @@ class TradingEngine:
         breaker: Optional[CircuitBreaker] = None,
         store=None,
         news_provider=None,
+        fakeout_model=None,
+        council=None,
     ) -> None:
         self.settings = settings
         self.client = client
@@ -57,6 +59,9 @@ class TradingEngine:
         self.store = store  # TradeStore（任意）。None なら永続化しない
         # ニュースセンチメント提供元（任意）。latest(instrument)->NewsSentiment|None
         self.news_provider = news_provider
+        # Phase 5: ダマシ予測ML（任意）と AI合議（任意）
+        self.fakeout_model = fakeout_model
+        self.council = council
         self._known_ids: Set[str] = set()
 
     # -- 1ティック -----------------------------------------------------------
@@ -133,7 +138,26 @@ class TradingEngine:
                 if not decision.allow:
                     result.blocked[inst] = decision.reason
                     continue
-                size_factor = decision.size_factor
+                size_factor *= decision.size_factor
+
+            # ダマシ予測ML（任意）: 成功確率が閾値未満なら見送り
+            if self.fakeout_model is not None:
+                from .ml import features_from_reason
+
+                proba = self.fakeout_model.predict_proba(
+                    features_from_reason(signal.reason))
+                if proba < self.settings.fakeout_min_proba:
+                    result.blocked[inst] = f"fakeout_risk:{proba:.2f}"
+                    continue
+
+            # AI合議（任意）: 多数決で見送り/サイズ調整
+            if self.council is not None:
+                verdict = self.council.evaluate(inst, signal.side,
+                                                self._setup_context(inst, signal))
+                if not verdict.allow:
+                    result.blocked[inst] = verdict.reason
+                    continue
+                size_factor *= verdict.size_factor
 
             client_id = self._client_id(inst, trig)
             rate = self._quote_to_account_rate(inst, summary)
@@ -196,6 +220,16 @@ class TradingEngine:
 
         sentiment = self.news_provider.latest(instrument)
         return sentiment_filter(side, sentiment)
+
+    def _setup_context(self, instrument: str, signal) -> str:
+        """AI合議に渡す現在セットアップの要約テキスト。"""
+        r = signal.reason or {}
+        return (
+            f"方向: {signal.side} / 価格: {signal.price:.5f}\n"
+            f"上位足の方向一致(MTF): {r.get('mtf')} 状態: {r.get('mtf_states')}\n"
+            f"ブレイク: {r.get('breakout')} / ADX: {r.get('adx')}\n"
+            f"ATR百分位: {r.get('atr_pct')} / 出来高比: {r.get('volume_ratio')}"
+        )
 
     def _quote_to_account_rate(self, instrument: str, summary: dict) -> float:
         """quote 通貨→口座通貨の換算レート。口座通貨==quote のとき 1.0。

@@ -241,4 +241,5 @@ ai-trade/
 - **Phase 2 実装済み**: `risk`（units逆算）/ `executor`（成行＋SL・ATRトレーリング・全決済）/ `safety`（サーキットブレーカー＋キルスイッチ）/ `engine`（1ティック処理＋常駐ループ）。テスト 14件パス。CLI: `scripts/run_engine.py`。
 - **Phase 3 実装済み**: `store`（sqlite で取引永続化・R倍数算出）/ `metrics`（勝率・期待値・最大DD・資産曲線・セッション分類）/ `dashboard`（Flask Blueprint `/trading`：資産曲線・取引ログ・ペア別/セッション別勝率・キルスイッチ操作）。エンジンが約定/決済を store に自動記録。テスト 8件パス。
 - **Phase 4 実装済み**: `news`（Claude `claude-opus-4-8` の構造化出力でニュース/中銀発言を解析→方向バイアス・リスク度・確信度をスコア化）。`sentiment_filter` がエントリー可否とロットサイズ係数を返し、engine が `news_provider` 経由で利用（高リスク/高確信逆風は見送り、弱い逆風は縮小）。テスト 10件パス。CLI: `scripts/analyze_news.py`。
-- **次（Phase 5）**: ML（ダマシブレイク確率予測）・チャート画像認識（Claude vision）・複数AIエージェントの合議評価。
+- **Phase 5 実装済み**: `ml`（純numpyのロジスティック回帰でダマシブレイク確率を予測。取引ログから学習し、成功確率が閾値未満なら見送り）/ `vision`（Claude vision でチャート画像を解析）/ `council`（複数AIアナリストの合議で投票・多数決）。engine に `fakeout_model` / `council` を任意注入し、ニュースに続くゲートとして機能。テスト 12件パス。CLI: `scripts/train_model.py`。
+- **全 Phase 完了**: 当初要望（相場分析・自動エントリー・ポジション管理・学習）と発展機能（ニュース/中銀解析・画像認識・AI合議）を一通り実装。テスト合計 52件パス。今後は実データでのフォワードテスト・パラメータ最適化・特徴量拡充が中心。

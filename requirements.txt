@@ -10,3 +10,6 @@ requests==2.32.3
 
 # ニュース/中銀発言の解析（Phase 4, Claude API）
 anthropic>=0.49.0
+
+# Phase 5: チャート画像生成（任意。無くても画像認識の解析自体は動作）
+# matplotlib>=3.8.0
