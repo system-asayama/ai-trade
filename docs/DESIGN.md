@@ -240,4 +240,5 @@ ai-trade/
 - **Phase 1 実装済み**: `oanda_client` / `data_feed` / `indicators` / `analysis` / `strategy` / `backtester`（ルックアヘッド回避・R倍数評価）。テスト 8件パス。
 - **Phase 2 実装済み**: `risk`（units逆算）/ `executor`（成行＋SL・ATRトレーリング・全決済）/ `safety`（サーキットブレーカー＋キルスイッチ）/ `engine`（1ティック処理＋常駐ループ）。テスト 14件パス。CLI: `scripts/run_engine.py`。
 - **Phase 3 実装済み**: `store`（sqlite で取引永続化・R倍数算出）/ `metrics`（勝率・期待値・最大DD・資産曲線・セッション分類）/ `dashboard`（Flask Blueprint `/trading`：資産曲線・取引ログ・ペア別/セッション別勝率・キルスイッチ操作）。エンジンが約定/決済を store に自動記録。テスト 8件パス。
-- **次（Phase 4）**: Claude API でニュース/中銀発言を解析しスコア化、エントリー/サイズの補助フィルタへ。さらに ML（ダマシ予測）・画像認識・AI合議。
+- **Phase 4 実装済み**: `news`（Claude `claude-opus-4-8` の構造化出力でニュース/中銀発言を解析→方向バイアス・リスク度・確信度をスコア化）。`sentiment_filter` がエントリー可否とロットサイズ係数を返し、engine が `news_provider` 経由で利用（高リスク/高確信逆風は見送り、弱い逆風は縮小）。テスト 10件パス。CLI: `scripts/analyze_news.py`。
+- **次（Phase 5）**: ML（ダマシブレイク確率予測）・チャート画像認識（Claude vision）・複数AIエージェントの合議評価。

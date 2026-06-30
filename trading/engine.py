@@ -47,6 +47,7 @@ class TradingEngine:
         executor: Optional[Executor] = None,
         breaker: Optional[CircuitBreaker] = None,
         store=None,
+        news_provider=None,
     ) -> None:
         self.settings = settings
         self.client = client
@@ -54,6 +55,8 @@ class TradingEngine:
         self.executor = executor or Executor(settings, client)
         self.breaker = breaker or CircuitBreaker(settings)
         self.store = store  # TradeStore（任意）。None なら永続化しない
+        # ニュースセンチメント提供元（任意）。latest(instrument)->NewsSentiment|None
+        self.news_provider = news_provider
         self._known_ids: Set[str] = set()
 
     # -- 1ティック -----------------------------------------------------------
@@ -123,11 +126,20 @@ class TradingEngine:
                 result.blocked[inst] = reason
                 continue
 
+            # ニュース/中銀発言フィルタ（任意）
+            size_factor = 1.0
+            decision = self._news_decision(inst, signal.side)
+            if decision is not None:
+                if not decision.allow:
+                    result.blocked[inst] = decision.reason
+                    continue
+                size_factor = decision.size_factor
+
             client_id = self._client_id(inst, trig)
             rate = self._quote_to_account_rate(inst, summary)
             order = self.executor.open_position(
                 signal, inst, result.balance, client_id=client_id,
-                quote_to_account_rate=rate,
+                quote_to_account_rate=rate, size_factor=size_factor,
             )
             if order is not None:
                 entered += 1
@@ -172,6 +184,18 @@ class TradingEngine:
         """同一バーの重複発注を防ぐための決定論的 ID。"""
         ts = int(trig.index[-1].value) if len(trig) else 0
         return f"{instrument}-{self.settings.trigger_granularity}-{ts}"
+
+    def _news_decision(self, instrument: str, side: str):
+        """ニュースセンチメントからエントリー可否/サイズ係数を判定する。
+
+        news_provider 未設定なら None（フィルタ無効）。
+        """
+        if self.news_provider is None:
+            return None
+        from .news import sentiment_filter
+
+        sentiment = self.news_provider.latest(instrument)
+        return sentiment_filter(side, sentiment)
 
     def _quote_to_account_rate(self, instrument: str, summary: dict) -> float:
         """quote 通貨→口座通貨の換算レート。口座通貨==quote のとき 1.0。

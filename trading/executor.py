@@ -85,8 +85,12 @@ class Executor:
         balance: float,
         client_id: Optional[str] = None,
         quote_to_account_rate: float = 1.0,
+        size_factor: float = 1.0,
     ) -> Optional[SizedOrder]:
-        """シグナルに基づき成行＋SLで新規建玉する。units が 0 なら発注しない。"""
+        """シグナルに基づき成行＋SLで新規建玉する。units が 0 なら発注しない。
+
+        size_factor: ニュース等の補助フィルタによるロット縮小係数（0〜1）。
+        """
         order = build_order(
             instrument=instrument,
             side=signal.side,
@@ -96,6 +100,9 @@ class Executor:
             settings=self.settings,
             quote_to_account_rate=quote_to_account_rate,
         )
+        if size_factor < 1.0:
+            magnitude = int(abs(order.units) * max(0.0, size_factor))
+            order.units = magnitude if order.units > 0 else -magnitude
         if order.units == 0:
             logger.warning("units=0 のため発注スキップ: %s", instrument)
             return None

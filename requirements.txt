@@ -7,3 +7,6 @@ flask-sqlalchemy==3.1.1
 pandas==2.2.2
 numpy==1.26.4
 requests==2.32.3
+
+# ニュース/中銀発言の解析（Phase 4, Claude API）
+anthropic>=0.49.0
