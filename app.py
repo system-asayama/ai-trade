@@ -47,6 +47,15 @@ def create_app() -> Flask:
         _seed_admin()
 
     _register_routes(app)
+
+    # トレーディング・ダッシュボード（Phase 3）を登録
+    try:
+        from trading.dashboard import register_dashboard
+
+        register_dashboard(app, login_required)
+    except Exception as exc:  # noqa: BLE001 トレーディング機能が無くても認証は動かす
+        app.logger.warning("トレーディングダッシュボードの登録に失敗: %s", exc)
+
     return app
 
 

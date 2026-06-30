@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}トレード ダッシュボード{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>📈 トレード ダッシュボード</h1>
+  <p class="muted">
+    環境: <strong>{{ settings.oanda_env }}</strong>
+    ｜ 対象: {{ settings.instruments | join(", ") }}
+    ｜ オープン建玉: {{ open_count }}
+  </p>
+
+  {% if breaker.killed %}
+    <div class="flash error">⛔ キルスイッチON。エンジンは新規エントリーを停止し、建玉を決済します。</div>
+  {% elif breaker.tripped %}
+    <div class="flash error">⚠️ サーキットブレーカー作動中: {{ breaker.trip_reason }}</div>
+  {% endif %}
+
+  <div class="inline" style="margin-top:12px;">
+    {% if breaker.killed %}
+      <form method="post" action="{{ url_for('trading.reset_kill') }}">
+        <button class="small">キルスイッチ解除</button>
+      </form>
+    {% else %}
+      <form method="post" action="{{ url_for('trading.kill') }}"
+            onsubmit="return confirm('全建玉を決済し、新規エントリーを停止します。よろしいですか？');">
+        <button class="danger small">🛑 緊急停止（キルスイッチ）</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h1>サマリ</h1>
+  <table>
+    <tr><th>取引数</th><td>{{ summary.num_trades }}</td>
+        <th>勝率</th><td>{{ "%.1f"|format(summary.win_rate * 100) }}%</td></tr>
+    <tr><th>合計R</th><td>{{ "%.2f"|format(summary.total_r) }}</td>
+        <th>期待値(R/取引)</th><td>{{ "%.2f"|format(summary.expectancy_r) }}</td></tr>
+    <tr><th>合計損益</th><td>{{ "%.2f"|format(summary.total_pnl) }}</td>
+        <th>最大DD(R)</th><td>{{ "%.2f"|format(summary.max_drawdown_r) }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h1>資産曲線（累積R）</h1>
+  {% if equity %}
+    <canvas id="equityChart" height="120"></canvas>
+  {% else %}
+    <p class="muted">決済済みの取引がまだありません。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h1>インストルメント別</h1>
+  <table>
+    <tr><th>ペア</th><th>取引数</th><th>勝率</th><th>合計R</th><th>期待値R</th></tr>
+    {% for name, s in by_instrument.items() %}
+    <tr><td>{{ name }}</td><td>{{ s.num_trades }}</td>
+        <td>{{ "%.1f"|format(s.win_rate * 100) }}%</td>
+        <td>{{ "%.2f"|format(s.total_r) }}</td>
+        <td>{{ "%.2f"|format(s.expectancy_r) }}</td></tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">データなし</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h1>セッション別（UTC近似）</h1>
+  <table>
+    <tr><th>セッション</th><th>取引数</th><th>勝率</th><th>合計R</th><th>期待値R</th></tr>
+    {% for name, s in by_session.items() %}
+    <tr><td>{{ name }}</td><td>{{ s.num_trades }}</td>
+        <td>{{ "%.1f"|format(s.win_rate * 100) }}%</td>
+        <td>{{ "%.2f"|format(s.total_r) }}</td>
+        <td>{{ "%.2f"|format(s.expectancy_r) }}</td></tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">データなし</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h1>取引ログ（最新100件）</h1>
+  <table>
+    <tr><th>状態</th><th>ペア</th><th>方向</th><th>数量</th>
+        <th>建値</th><th>決済</th><th>R</th><th>損益</th><th>理由</th></tr>
+    {% for t in trades %}
+    <tr>
+      <td>{{ t.status }}</td>
+      <td>{{ t.instrument }}</td>
+      <td>{{ t.side }}</td>
+      <td>{{ t.units }}</td>
+      <td>{{ "%.5f"|format(t.entry_price) if t.entry_price is not none else "-" }}</td>
+      <td>{{ "%.5f"|format(t.exit_price) if t.exit_price is not none else "-" }}</td>
+      <td>{{ "%.2f"|format(t.r_multiple) if t.r_multiple is not none else "-" }}</td>
+      <td>{{ "%.2f"|format(t.pnl) if t.pnl is not none else "-" }}</td>
+      <td>{{ t.exit_reason or "-" }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="muted">取引がまだありません。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if equity %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  const labels = {{ equity | map(attribute='time') | list | tojson }};
+  const data = {{ equity | map(attribute='cum_r') | list | tojson }};
+  new Chart(document.getElementById('equityChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: '累積R', data: data,
+        borderColor: '#3b5bdb', backgroundColor: 'rgba(59,91,219,.1)',
+        fill: true, tension: 0.2, pointRadius: 2
+      }]
+    },
+    options: { scales: { x: { ticks: { maxTicksLimit: 8 } } } }
+  });
+</script>
+{% endif %}
+
+{% endblock %}

@@ -46,12 +46,14 @@ class TradingEngine:
         feed: Optional[DataFeed] = None,
         executor: Optional[Executor] = None,
         breaker: Optional[CircuitBreaker] = None,
+        store=None,
     ) -> None:
         self.settings = settings
         self.client = client
         self.feed = feed or DataFeed(settings, client)
         self.executor = executor or Executor(settings, client)
         self.breaker = breaker or CircuitBreaker(settings)
+        self.store = store  # TradeStore（任意）。None なら永続化しない
         self._known_ids: Set[str] = set()
 
     # -- 1ティック -----------------------------------------------------------
@@ -71,6 +73,15 @@ class TradingEngine:
                 pnl = float(trade.get("realizedPL") or 0.0)
                 self.breaker.register_close(pnl, today)
                 result.closes_registered += 1
+                if self.store is not None:
+                    exit_price = trade.get("averageClosePrice") or trade.get("price")
+                    self.store.record_close(
+                        oanda_trade_id=closed_id,
+                        exit_time=trade.get("closeTime") or today,
+                        exit_price=float(exit_price) if exit_price else None,
+                        pnl=pnl,
+                        exit_reason="closed",
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.error("決済損益の取得失敗 trade=%s: %s", closed_id, exc)
         self._known_ids = open_ids
@@ -121,6 +132,19 @@ class TradingEngine:
             if order is not None:
                 entered += 1
                 result.entries.append(f"{inst}:{order.side}:{order.units}")
+                if self.store is not None:
+                    self.store.record_open(
+                        instrument=inst,
+                        side=order.side,
+                        units=order.units,
+                        entry_time=trig.index[-1],
+                        entry_price=order.entry_price,
+                        stop_loss=order.stop_loss,
+                        environment=self.settings.oanda_env,
+                        oanda_trade_id=order.oanda_trade_id,
+                        client_id=client_id,
+                        entry_features=signal.reason,
+                    )
 
         # トレーリング
         result.trails_updated = self.executor.trail_stops(open_trades, atr_by_instrument)

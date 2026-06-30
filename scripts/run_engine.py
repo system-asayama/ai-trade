@@ -30,6 +30,7 @@ from trading.config import Settings  # noqa: E402
 from trading.engine import TradingEngine  # noqa: E402
 from trading.oanda_client import OandaClient  # noqa: E402
 from trading.safety import CircuitBreaker  # noqa: E402
+from trading.store import TradeStore  # noqa: E402
 
 BREAKER_STATE_PATH = os.environ.get("BREAKER_STATE_PATH", "instance/breaker.json")
 
@@ -42,7 +43,7 @@ def build_engine(settings: Settings):
         max_daily_loss=float(os.environ.get("MAX_DAILY_LOSS", "0") or 0),
         max_consecutive_losses=int(os.environ.get("MAX_CONSECUTIVE_LOSSES", "0") or 0),
     )
-    engine = TradingEngine(settings, client, breaker=breaker)
+    engine = TradingEngine(settings, client, breaker=breaker, store=TradeStore())
     return engine, breaker
 
 

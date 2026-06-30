@@ -44,6 +44,7 @@
     <nav>
       {% if current_user %}
         <a href="{{ url_for('dashboard') }}">ダッシュボード</a>
+        <a href="{{ url_for('trading.overview') }}">トレード</a>
         {% if current_user.is_admin %}<a href="{{ url_for('admin_users') }}">ユーザー管理</a>{% endif %}
         <a href="{{ url_for('logout') }}">ログアウト</a>
       {% else %}

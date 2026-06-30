@@ -101,6 +101,18 @@ python scripts/run_engine.py --reset-kill
 python scripts/run_engine.py --status
 ```
 
+### Phase 3: 永続化・ダッシュボード・統計
+
+| モジュール | 役割 |
+| --- | --- |
+| `store.py` | 取引の永続化（sqlite。open/close 記録、R倍数自動計算） |
+| `metrics.py` | 勝率・期待値・最大DD・資産曲線・セッション分類の集計 |
+| `dashboard.py` | Flask Blueprint。ログイン後 `/trading` で可視化＋キルスイッチ操作 |
+
+Web の `/trading` で資産曲線（累積R）・取引ログ・ペア別/時間帯別の勝率を表示し、
+ブラウザから緊急停止（キルスイッチ）も操作できます（フラグを更新し、エンジンが
+次ティックで全決済）。エンジンは約定/決済を自動で `store` に記録します。
+
 ### バックテストのデモ
 
 ```bash
@@ -116,6 +128,7 @@ OANDA_API_TOKEN=... OANDA_ACCOUNT_ID=... python scripts/run_backtest.py --live-d
 ```bash
 python tests/test_trading.py     # Phase 1（指標・分析・バックテスト）
 python tests/test_execution.py   # Phase 2（執行・リスク・安全装置・エンジン）
+python tests/test_store.py       # Phase 3（永続化・統計・ダッシュボード）
 ```
 
 > ⚠️ 注意: バックテストの好成績は将来の利益を保証しません。実弁(live)投入は長期の

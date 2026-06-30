@@ -15,6 +15,7 @@ quote_to_account_rate:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from .config import Settings
 from .strategy import SIGNAL_BUY
@@ -28,6 +29,7 @@ class SizedOrder:
     entry_price: float
     stop_loss: float
     risk_amount: float  # 口座通貨での想定損失額
+    oanda_trade_id: Optional[str] = None  # 約定後に付与される建玉ID
 
 
 def stop_for(side: str, entry_price: float, atr: float, settings: Settings) -> float:

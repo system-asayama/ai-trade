@@ -34,6 +34,14 @@ class OpenTrade:
         return SIGNAL_BUY if self.units > 0 else "SELL"
 
 
+def _extract_trade_id(resp: dict) -> Optional[str]:
+    """create_market_order レスポンスから建玉IDを抽出する（無ければ None）。"""
+    fill = (resp or {}).get("orderFillTransaction") or {}
+    opened = fill.get("tradeOpened") or {}
+    trade_id = opened.get("tradeID")
+    return str(trade_id) if trade_id is not None else None
+
+
 def parse_open_trades(raw: List[dict]) -> List[OpenTrade]:
     """OANDA openTrades レスポンスを OpenTrade のリストへ変換する。"""
     trades: List[OpenTrade] = []
@@ -92,15 +100,17 @@ class Executor:
             logger.warning("units=0 のため発注スキップ: %s", instrument)
             return None
 
-        self.client.create_market_order(
+        resp = self.client.create_market_order(
             instrument=instrument,
             units=order.units,
             stop_loss_price=order.stop_loss,
             client_id=client_id,
             price_precision=self.precision_for(instrument),
         )
-        logger.info("発注: %s %s units=%d SL=%.5f",
-                    instrument, signal.side, order.units, order.stop_loss)
+        order.oanda_trade_id = _extract_trade_id(resp)
+        logger.info("発注: %s %s units=%d SL=%.5f id=%s",
+                    instrument, signal.side, order.units, order.stop_loss,
+                    order.oanda_trade_id)
         return order
 
     # -- トレーリング --------------------------------------------------------
