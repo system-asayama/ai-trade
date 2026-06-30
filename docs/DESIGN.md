@@ -235,7 +235,8 @@ ai-trade/
 
 ---
 
-## 10. 次のアクション
+## 10. 実装ステータス
 
-この設計でよければ、**Phase 1（OANDAデータ取得 + 指標計算 + バックテスト基盤）** から実装に着手する。
-まず `trading/oanda_client.py` と `data_feed.py` でデモ口座から足を取得して保存できる状態を作り、`indicators.py` / `analysis.py` でMTF判定まで通すのを最初のマイルストーンとする。
+- **Phase 1 実装済み**: `oanda_client` / `data_feed` / `indicators` / `analysis` / `strategy` / `backtester`（ルックアヘッド回避・R倍数評価）。テスト 8件パス。
+- **Phase 2 実装済み**: `risk`（units逆算）/ `executor`（成行＋SL・ATRトレーリング・全決済）/ `safety`（サーキットブレーカー＋キルスイッチ）/ `engine`（1ティック処理＋常駐ループ）。テスト 14件パス。CLI: `scripts/run_engine.py`。
+- **次（Phase 3）**: 既存Flaskにダッシュボードを追加し、資産曲線・取引ログ・ペア別/時間帯別勝率・キルスイッチ操作を可視化。`trades` をDB永続化し、`metrics` 集計を実装する。
