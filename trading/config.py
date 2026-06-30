@@ -91,6 +91,17 @@ class Settings:
         default_factory=lambda: _float_env("FAKEOUT_MIN_PROBA", 0.5)
     )
 
+    # --- 経済指標カレンダー（危険度フィルタ） ---
+    econ_blackout_before_min: int = field(
+        default_factory=lambda: _int_env("ECON_BLACKOUT_BEFORE_MIN", 30)
+    )
+    econ_blackout_after_min: int = field(
+        default_factory=lambda: _int_env("ECON_BLACKOUT_AFTER_MIN", 15)
+    )
+    econ_importance_min: str = field(
+        default_factory=lambda: os.environ.get("ECON_IMPORTANCE_MIN", "high")
+    )
+
     def __post_init__(self) -> None:
         if self.oanda_env not in OANDA_HOSTS:
             raise ValueError(

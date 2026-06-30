@@ -43,7 +43,19 @@ def build_engine(settings: Settings):
         max_daily_loss=float(os.environ.get("MAX_DAILY_LOSS", "0") or 0),
         max_consecutive_losses=int(os.environ.get("MAX_CONSECUTIVE_LOSSES", "0") or 0),
     )
-    engine = TradingEngine(settings, client, breaker=breaker, store=TradeStore())
+    # 経済指標カレンダー（ECON_CALENDAR_URL があれば危険度フィルタを有効化）
+    calendar = None
+    if os.environ.get("ECON_CALENDAR_URL"):
+        from fetch_calendar import build_calendar
+
+        calendar = build_calendar(settings)
+        try:
+            calendar.refresh()
+        except Exception as exc:  # noqa: BLE001 起動時取得失敗は警告のみ
+            print(f"カレンダー初期取得に失敗（後続ティックで再試行）: {exc}")
+
+    engine = TradingEngine(settings, client, breaker=breaker,
+                           store=TradeStore(), calendar=calendar)
     return engine, breaker
 
 

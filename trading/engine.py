@@ -50,6 +50,7 @@ class TradingEngine:
         news_provider=None,
         fakeout_model=None,
         council=None,
+        calendar=None,
     ) -> None:
         self.settings = settings
         self.client = client
@@ -62,6 +63,8 @@ class TradingEngine:
         # Phase 5: ダマシ予測ML（任意）と AI合議（任意）
         self.fakeout_model = fakeout_model
         self.council = council
+        # 経済指標カレンダー（任意）。危険度フィルタ（ブラックアウト）に使う
+        self.calendar = calendar
         self._known_ids: Set[str] = set()
 
     # -- 1ティック -----------------------------------------------------------
@@ -101,6 +104,10 @@ class TradingEngine:
             logger.warning("キルスイッチ作動: 全建玉を決済")
             return result
 
+        # 経済指標カレンダーを必要に応じて更新（TTL内なら何もしない）
+        if self.calendar is not None:
+            self.calendar.maybe_refresh()
+
         instruments_with_pos = {t.instrument for t in open_trades}
         atr_by_instrument: Dict[str, float] = {}
         entered = 0
@@ -130,6 +137,13 @@ class TradingEngine:
             if not ok:
                 result.blocked[inst] = reason
                 continue
+
+            # 経済指標カレンダーの危険度フィルタ（任意・ハードフィルタ）
+            if self.calendar is not None and not trig.empty:
+                blackout, ev = self.calendar.is_blackout(inst, trig.index[-1].to_pydatetime())
+                if blackout:
+                    result.blocked[inst] = f"econ_blackout:{ev.currency}"
+                    continue
 
             # ニュース/中銀発言フィルタ（任意）
             size_factor = 1.0
