@@ -9,6 +9,14 @@
     ここから取り込めます（口座不要・無料）。取り込みは一度やればOKです。
   </p>
 
+  {% if status %}
+    <div class="flash {{ 'error' if status.state == 'error' else 'success' }}">
+      {% if status.state == 'running' %}⏳{% elif status.state == 'done' %}✅{% else %}⚠️{% endif %}
+      {{ status.message }}
+      {% if status.state == 'running' %}（この画面を再読み込みすると更新されます）{% endif %}
+    </div>
+  {% endif %}
+
   {% if hist %}
     <p>取り込み済み：
       {% for inst, h in hist.items() %}

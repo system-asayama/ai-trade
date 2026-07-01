@@ -150,6 +150,10 @@ class Backtester:
         warmup = max(settings.ema_slow, settings.breakout_lookback + 1)
         position: Optional[BacktestTrade] = None
 
+        # strategy.evaluate は直近の一定本数しか参照しないため、毎バー全履歴を
+        # スライスせず「直近 window 本」だけ渡す（O(n^2)→O(n) に高速化）。
+        window = max(settings.breakout_lookback + 1, settings.volume_lookback + 1, 150)
+
         for i in range(warmup, len(trigger)):
             bar = trigger.iloc[i]
             when = trigger.index[i]
@@ -159,7 +163,7 @@ class Backtester:
                 position = self._manage_position(position, bar, when, result)
 
             # --- 反対シグナル/新規エントリーの評価 ---
-            slice_df = trigger.iloc[: i + 1]
+            slice_df = trigger.iloc[max(0, i - window + 1): i + 1]
             mtf = self._htf_states_at(htf_indicators, when)
             signal = strategy.evaluate(slice_df, mtf, settings)
 

@@ -11,7 +11,9 @@
 """
 from __future__ import annotations
 
+import json
 import os
+import threading
 from functools import wraps
 
 from flask import (
@@ -104,9 +106,9 @@ def _current_user_id():
     return session.get("user_id")
 
 
-# 長期バックテストで一度に処理する M15 本数の上限（およそ2年ぶん）。
-# Webのタイムアウト内に収めるためのガード。
-_LONG_MAX_BARS = 200000
+# 長期バックテストで一度に処理する M15 本数の上限（およそ4年ぶん）。
+# nginx(60秒)/gunicorn(180秒)のタイムアウト内（実測 約28秒）に収めるガード。
+_LONG_MAX_BARS = 100000
 
 
 def _hist_coverage():
@@ -128,14 +130,62 @@ def _hist_coverage():
 @_login_required
 def hist_import_view():
     return render_template("trading_import.html", hist=_hist_coverage(),
-                          settings=Settings())
+                          settings=Settings(), status=_read_status())
+
+
+def _status_path():
+    base = os.path.dirname(os.environ.get("HIST_DB_PATH", "instance/histdata.db")) or "instance"
+    return os.path.join(base, "import_status.json")
+
+
+def _write_status(state: str, message: str) -> None:
+    try:
+        path = _status_path()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"state": state, "message": message}, fh, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _read_status():
+    try:
+        with open(_status_path(), "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _run_import(instrument: str, year: int) -> None:
+    """バックグラウンドで年次→（不可なら）月次に取り込む。"""
+    from .histdata import HistStore, download_month, download_year, import_m1_bytes
+    store = HistStore()
+    try:
+        n = import_m1_bytes(store, instrument, download_year(instrument, year), is_zip=True)
+        if n == 0:
+            months = 0
+            for month in range(1, 13):
+                _write_status("running", f"{instrument} {year}年 {month}月を取得中…（{n}本）")
+                try:
+                    m = import_m1_bytes(store, instrument,
+                                        download_month(instrument, year, month), is_zip=True)
+                    n += m
+                    months += 1 if m > 0 else 0
+                except Exception:  # noqa: BLE001
+                    continue
+            if n > 0:
+                _write_status("done", f"{instrument} {year}年 取り込み完了（{months}か月・{n}本のM15）")
+            else:
+                _write_status("error", f"{instrument} {year}年 データが取得できませんでした。手動アップロードをお試しください。")
+        else:
+            _write_status("done", f"{instrument} {year}年 取り込み完了（{n}本のM15）")
+    except Exception as exc:  # noqa: BLE001
+        _write_status("error", f"取り込み失敗: {exc}")
 
 
 @trading_bp.route("/import/auto", methods=["POST"])
 @_login_required
 def hist_import_auto():
-    from .histdata import HistStore, download_month, download_year, import_m1_bytes
-
     instrument = (request.form.get("instrument") or "USD_JPY").strip()
     try:
         year = int(request.form.get("year") or 0)
@@ -145,33 +195,11 @@ def hist_import_auto():
         flash("正しい年を入力してください（例: 2024）。", "error")
         return redirect(url_for("trading.hist_import_view"))
 
-    store = HistStore()
-    try:
-        # まず「1年まとめ」を試す（過去の完結した年はこれで取れる）
-        n = import_m1_bytes(store, instrument,
-                            download_year(instrument, year), is_zip=True)
-        if n > 0:
-            flash(f"{instrument} {year}年 を取り込みました（{n}本のM15）。", "success")
-        else:
-            # 取れない年（進行中の年など）は月ごとに取得する
-            months = 0
-            for month in range(1, 13):
-                try:
-                    m = import_m1_bytes(store, instrument,
-                                        download_month(instrument, year, month), is_zip=True)
-                    n += m
-                    if m > 0:
-                        months += 1
-                except Exception:  # noqa: BLE001 その月が無ければスキップ
-                    continue
-            if n > 0:
-                flash(f"{instrument} {year}年 を月別に取り込みました"
-                      f"（{months}か月・{n}本のM15）。", "success")
-            else:
-                flash("データが取得できませんでした。手動ダウンロード→"
-                      "アップロードをお試しください。", "error")
-    except Exception as exc:  # noqa: BLE001
-        flash(f"自動取り込みに失敗しました: {exc} … 手動アップロードをお試しください。", "error")
+    _write_status("running", f"{instrument} {year}年 を取り込み中…")
+    # 504（タイムアウト）を避けるためバックグラウンドで実行し、即応答する
+    threading.Thread(target=_run_import, args=(instrument, year), daemon=True).start()
+    flash("取り込みを開始しました。1〜数分後にこの画面を再読み込みすると進行状況が更新されます。",
+          "success")
     return redirect(url_for("trading.hist_import_view"))
 
 
