@@ -27,7 +27,7 @@ def _enabled_settings(app_module):
     out = []
     with app_module.app.app_context():
         for us in UserSettings.query.filter_by(engine_enabled=True).all():
-            if us.has_oanda_token:
+            if us.broker_ready:  # 選択中ブローカーの接続情報が揃っている
                 out.append(us)
     return out
 

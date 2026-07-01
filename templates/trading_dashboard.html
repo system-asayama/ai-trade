@@ -5,10 +5,13 @@
 <div class="card">
   <h1>📈 トレード ダッシュボード</h1>
   <p class="muted">
-    環境: <strong>{{ settings.oanda_env }}</strong>
-    ｜ 対象: {{ settings.instruments | join(", ") }}
+    ブローカー: <strong>{{ broker | upper }}</strong>（{{ broker_env }}）
+    ｜ 接続: {% if broker_ready %}<span class="badge admin">設定済み</span>{% else %}<span class="badge user">未設定</span>{% endif %}
     ｜ オープン建玉: {{ open_count }}
   </p>
+  {% if not broker_ready %}
+    <div class="flash error">まだ接続情報（APIキー）が未設定です。「⚙️ 設定」から登録してください。</div>
+  {% endif %}
 
   {% if breaker.killed %}
     <div class="flash error">⛔ キルスイッチON。エンジンは新規エントリーを停止し、建玉を決済します。</div>

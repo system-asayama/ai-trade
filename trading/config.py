@@ -42,11 +42,22 @@ OANDA_HOSTS = {
 class Settings:
     """エンジン全体の設定。"""
 
+    # --- ブローカー選択（oanda / capital） ---
+    broker: str = field(default_factory=lambda: os.environ.get("BROKER", "oanda"))
+
     # --- OANDA 接続 ---
     oanda_api_token: str = field(default_factory=lambda: os.environ.get("OANDA_API_TOKEN", ""))
     oanda_account_id: str = field(default_factory=lambda: os.environ.get("OANDA_ACCOUNT_ID", ""))
     # 既定は practice（実弁を誤って触らないための安全装置）
     oanda_env: str = field(default_factory=lambda: os.environ.get("OANDA_ENV", "practice"))
+
+    # --- Capital.com 接続（デモ既定） ---
+    capital_api_key: str = field(default_factory=lambda: os.environ.get("CAPITAL_API_KEY", ""))
+    capital_identifier: str = field(
+        default_factory=lambda: os.environ.get("CAPITAL_IDENTIFIER", "")
+    )
+    capital_password: str = field(default_factory=lambda: os.environ.get("CAPITAL_PASSWORD", ""))
+    capital_env: str = field(default_factory=lambda: os.environ.get("CAPITAL_ENV", "demo"))
 
     # --- 取引対象 ---
     instruments: List[str] = field(

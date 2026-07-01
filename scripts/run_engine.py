@@ -26,9 +26,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from trading.broker import make_broker_client  # noqa: E402
 from trading.config import Settings  # noqa: E402
 from trading.engine import TradingEngine  # noqa: E402
-from trading.oanda_client import OandaClient  # noqa: E402
 from trading.safety import CircuitBreaker  # noqa: E402
 from trading.store import TradeStore  # noqa: E402
 
@@ -36,7 +36,7 @@ BREAKER_STATE_PATH = os.environ.get("BREAKER_STATE_PATH", "instance/breaker.json
 
 
 def build_engine(settings: Settings):
-    client = OandaClient(settings)
+    client = make_broker_client(settings)
     breaker = CircuitBreaker.load(
         settings,
         path=BREAKER_STATE_PATH,

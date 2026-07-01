@@ -17,10 +17,18 @@ def settings_from_user(us: Any) -> Settings:
     環境変数由来のデフォルトを生成後、ユーザー値で上書きする。
     """
     s = Settings()
+    s.broker = getattr(us, "broker", "oanda") or "oanda"
     s.oanda_api_token = us.get_oanda_token()
     s.oanda_account_id = us.oanda_account_id or ""
     env = (us.oanda_env or "practice").lower()
     s.oanda_env = env if env in OANDA_HOSTS else "practice"
+
+    # Capital.com
+    if hasattr(us, "get_capital_api_key"):
+        s.capital_api_key = us.get_capital_api_key()
+        s.capital_password = us.get_capital_password()
+        s.capital_identifier = us.capital_identifier or ""
+        s.capital_env = (us.capital_env or "demo").lower()
 
     if us.instruments:
         s.instruments = [i.strip() for i in us.instruments.split(",") if i.strip()]
@@ -41,13 +49,13 @@ def build_user_engine(us: Any):
     anthropic / calendar 等は、そのユーザーの鍵・URL が揃っている場合のみ有効化。
     実際の発注には OANDA トークンが必須。
     """
+    from .broker import make_broker_client
     from .engine import TradingEngine
-    from .oanda_client import OandaClient
     from .safety import CircuitBreaker
     from .store import TradeStore
 
     settings = settings_from_user(us)
-    client = OandaClient(settings)
+    client = make_broker_client(settings)
     breaker = CircuitBreaker(settings)
     store = TradeStore()  # 単一DB。将来はユーザー別スコープ化を検討
 

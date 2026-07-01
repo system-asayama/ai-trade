@@ -65,6 +65,18 @@ python app.py
 OANDA v20 API を用いた AI 自動売買システムを構築中です。設計の全体像は
 [`docs/DESIGN.md`](docs/DESIGN.md) を参照してください。
 
+### ブローカー選択（OANDA / Capital.com）
+
+対応ブローカーを **設定画面から選べます**（`broker`）。どちらも同一インターフェース
+（`trading/broker.py` のファクトリで切替）で、エンジン側は差し替えを意識しません。
+
+| ブローカー | 実装 | 備考 |
+| --- | --- | --- |
+| OANDA v20 | `oanda_client.py` | practice/live。トークン＋口座ID |
+| Capital.com | `capital_client.py` | demo/live。APIキー＋ログインID＋API用パスワード（セッション認証、足/建玉/注文をOANDA互換の形に変換） |
+
+Capital.com は無料デモ口座が作りやすく、デモでも API を利用できます。
+
 ### マルチテナント（各ユーザーがAPIキーを持ち込み）
 
 ユーザー（法人）ごとに、自分の OANDA / Anthropic のAPIキーと設定を
