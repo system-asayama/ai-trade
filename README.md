@@ -84,6 +84,23 @@ python scripts/run_multi.py --poll 60   # 有効化ユーザーを60秒毎に実
 暗号化鍵は `APP_ENCRYPTION_KEY`（未設定なら `SECRET_KEY` から導出）。本番では
 必ずランダムな値を設定してください。
 
+### 本番での常駐（docker-compose）
+
+`docker-compose.yml` に **`worker` サービス**を追加済みです。`web` と同一イメージ・
+同一の `instance/` ボリューム（取引DB・キルスイッチ状態を共有）で
+`scripts/run_multi.py` を常駐実行します。`main` への push で自動デプロイされ、
+`restart: unless-stopped` で常時稼働します。
+
+```bash
+docker compose up -d          # web + worker + db が起動
+docker compose logs -f worker # ワーカーのログ
+```
+
+重要:
+- `web` と `worker` の `APP_ENCRYPTION_KEY`（無ければ `SECRET_KEY`）は**必ず同一**に
+  してください。異なると worker がユーザーの保存済みキーを復号できません。
+- 稼働間隔は `WORKER_POLL_SECONDS`（既定60秒）で調整できます。
+
 ### 現在の実装（Phase 1: データ取得・指標・分析・バックテスト）
 
 `trading/` パッケージ:

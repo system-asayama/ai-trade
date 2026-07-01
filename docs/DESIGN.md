@@ -243,4 +243,5 @@ ai-trade/
 - **Phase 4 実装済み**: `news`（Claude `claude-opus-4-8` の構造化出力でニュース/中銀発言を解析→方向バイアス・リスク度・確信度をスコア化）。`sentiment_filter` がエントリー可否とロットサイズ係数を返し、engine が `news_provider` 経由で利用（高リスク/高確信逆風は見送り、弱い逆風は縮小）。テスト 10件パス。CLI: `scripts/analyze_news.py`。
 - **Phase 5 実装済み**: `ml`（純numpyのロジスティック回帰でダマシブレイク確率を予測。取引ログから学習し、成功確率が閾値未満なら見送り）/ `vision`（Claude vision でチャート画像を解析）/ `council`（複数AIアナリストの合議で投票・多数決）。engine に `fakeout_model` / `council` を任意注入し、ニュースに続くゲートとして機能。テスト 12件パス。CLI: `scripts/train_model.py`。
 - **経済指標カレンダー 実装済み**: `calendar`（汎用HTTP/Static プロバイダで指標を取得し、対象通貨の高重要度イベント前後をブラックアウト）。engine に `calendar` を任意注入し、全ゲートの先頭で評価。TTLで自動更新。テスト 8件パス。CLI: `scripts/fetch_calendar.py`。
-- **全 Phase 完了**: 当初要望（相場分析・自動エントリー・ポジション管理・学習）と発展機能（ニュース/中銀解析・画像認識・AI合議）に加え、経済指標の危険度フィルタまで実装。テスト合計 60件パス。今後は実データでのフォワードテスト・パラメータ最適化・特徴量拡充が中心。
+- **マルチテナント 実装済み**: 各ユーザー（法人）が Web `/trading/settings` で自分の OANDA/Anthropic キーと設定を登録。`cryptobox`（標準ライブラリのみの認証付き暗号）で保存時暗号化。`tenant.py` が per-user の Settings/エンジンを構築し、`scripts/run_multi.py` が `engine_enabled` の全ユーザーを常駐実行。docker-compose に `worker` サービスを追加（web と同一イメージ・共有 `instance/` ボリューム、`restart: unless-stopped`）。テスト合計 69件パス。
+- **全 Phase 完了**: 当初要望（相場分析・自動エントリー・ポジション管理・学習）と発展機能（ニュース/中銀解析・画像認識・AI合議）に加え、経済指標の危険度フィルタ、マルチテナント運用まで実装。今後は実データでのフォワードテスト・パラメータ最適化・特徴量拡充が中心。

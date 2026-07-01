@@ -1,16 +1,44 @@
 services:
   web:
     build: .
+    image: ai-trade-app:latest
     ports:
       - "${WEB_PORT:-8000}:8000"
     environment:
       DATABASE_URL: postgresql://app:app@db:5432/easy_login_system_app
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      # 取引DB・キルスイッチ状態・学習モデルは共有ボリューム上に置く
+      TRADES_DB_PATH: /app/instance/trading.db
+      BREAKER_STATE_PATH: /app/instance/breaker.json
+      FAKEOUT_MODEL_PATH: /app/instance/fakeout_model.json
     depends_on:
       - db
+    volumes:
+      - app_instance:/app/instance
     restart: unless-stopped
+
+  # マルチテナント自動売買ワーカー（各ユーザーの設定・APIキーで常駐実行）
+  worker:
+    image: ai-trade-app:latest
+    command: python scripts/run_multi.py --poll ${WORKER_POLL_SECONDS:-60}
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/easy_login_system_app
+      # 暗号化鍵は web と必ず同一に（web が保存したキーを worker が復号する）
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      TRADES_DB_PATH: /app/instance/trading.db
+      BREAKER_STATE_PATH: /app/instance/breaker.json
+      FAKEOUT_MODEL_PATH: /app/instance/fakeout_model.json
+    depends_on:
+      - db
+      - web
+    volumes:
+      - app_instance:/app/instance
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -20,5 +48,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     restart: unless-stopped
+
 volumes:
   db_data:
+  app_instance:
