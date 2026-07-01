@@ -106,9 +106,16 @@ def _current_user_id():
     return session.get("user_id")
 
 
-# 長期バックテストで一度に処理する M15 本数の上限（およそ4年ぶん）。
-# nginx(60秒)/gunicorn(180秒)のタイムアウト内（実測 約28秒）に収めるガード。
-_LONG_MAX_BARS = 100000
+# バックテストの期間プリセット。長い期間ほど計算に時間がかかるため、
+# 短い期間を選べばタイムアウトを確実に避けられる（M15は約25000本/年）。
+_BT_PERIODS = {
+    "60d": {"label": "直近60日（無料データ・すぐ）", "source": "yahoo"},
+    "3m": {"label": "長期3ヶ月（取り込み済み・約数秒）", "source": "hist", "bars": 6250},
+    "6m": {"label": "長期6ヶ月（取り込み済み）", "source": "hist", "bars": 12500},
+    "1y": {"label": "長期1年（取り込み済み・約10秒）", "source": "hist", "bars": 25000},
+    "2y": {"label": "長期2年（取り込み済み・約15秒）", "source": "hist", "bars": 50000},
+    "4y": {"label": "長期4年（取り込み済み・約30秒）", "source": "hist", "bars": 100000},
+}
 
 
 def _hist_coverage():
@@ -232,7 +239,7 @@ def backtest_view():
     settings = Settings()
     return render_template(
         "trading_backtest.html", settings=settings, result=None,
-        hist=_hist_coverage(),
+        hist=_hist_coverage(), periods=_BT_PERIODS,
         form={"instrument": settings.instruments[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2})
 
@@ -244,9 +251,13 @@ def backtest_run():
     from .data_feed import candles_to_df
 
     settings = Settings()
+    period_key = request.form.get("period")
+    if period_key not in _BT_PERIODS:
+        period_key = "60d"
+    preset = _BT_PERIODS[period_key]
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
-        "period": request.form.get("period") if request.form.get("period") in ("60d", "long") else "60d",
+        "period": period_key,
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
     }
@@ -254,10 +265,10 @@ def backtest_run():
     equity = []
     data_from = data_to = None
     try:
-        if form["period"] == "long":
+        if preset["source"] == "hist":
             from .histdata import HistStore
             candles = HistStore().load_candles(form["instrument"], "M15",
-                                               limit=_LONG_MAX_BARS)
+                                               limit=preset["bars"])
             if not candles:
                 error = ("この通貨ペアの長期データが未取り込みです。"
                          "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
@@ -284,7 +295,7 @@ def backtest_run():
 
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
-        result=result, summary=summary, equity=equity, error=error,
+        periods=_BT_PERIODS, result=result, summary=summary, equity=equity, error=error,
         data_from=data_from, data_to=data_to)
 
 

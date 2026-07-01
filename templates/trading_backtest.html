@@ -16,10 +16,11 @@
         <option value="{{ inst }}" {{ 'selected' if form.instrument == inst else '' }}>{{ inst }}</option>
       {% endfor %}
     </select>
-    <label>期間</label>
+    <label>期間（短いほど速い・タイムアウトしにくい）</label>
     <select name="period">
-      <option value="60d" {{ 'selected' if form.period != 'long' else '' }}>直近60日（15分足・無料データ）</option>
-      <option value="long" {{ 'selected' if form.period == 'long' else '' }}>長期（取り込み済みデータ・15分足）</option>
+      {% for key, p in periods.items() %}
+        <option value="{{ key }}" {{ 'selected' if form.period == key else '' }}>{{ p.label }}</option>
+      {% endfor %}
     </select>
     {% if hist %}
       <p class="muted">取り込み済み:
