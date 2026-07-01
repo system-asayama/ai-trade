@@ -43,7 +43,8 @@ def create_app() -> Flask:
     db.init_app(app)
 
     with app.app_context():
-        db.create_all()
+        _init_db_with_retry()
+        _ensure_schema()
         _seed_admin()
 
     _register_routes(app)
@@ -57,6 +58,55 @@ def create_app() -> Flask:
         app.logger.warning("トレーディングダッシュボードの登録に失敗: %s", exc)
 
     return app
+
+
+def _init_db_with_retry(max_attempts: int = 10, delay: float = 3.0) -> None:
+    """DB(Postgres)がまだ起動していない場合に備え、create_all をリトライする。
+
+    起動直後は DB コンテナが未準備のことがあり、そのまま失敗すると web が
+    クラッシュループ（= 502/接続拒否）になる。数回待って再試行する。
+    """
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    for attempt in range(max_attempts):
+        try:
+            db.create_all()
+            return
+        except OperationalError as exc:  # DB 未準備など
+            if attempt == max_attempts - 1:
+                raise
+            print(f"[startup] DB未準備、{delay}秒後に再試行 ({attempt + 1}/{max_attempts}): {exc}")
+            time.sleep(delay)
+
+
+def _ensure_schema() -> None:
+    """既存テーブルに不足している列を補う（create_all は列を追加しないため）。
+
+    本番DBにモデルへ後から追加した列（broker 等）が無いと 500 になるのを防ぐ。
+    失敗しても起動は継続する。
+    """
+    from sqlalchemy import inspect, text
+
+    wanted = {"broker": "VARCHAR(16)"}
+    try:
+        insp = inspect(db.engine)
+        if "user_settings" not in insp.get_table_names():
+            return
+        existing = {c["name"] for c in insp.get_columns("user_settings")}
+        for name, ddl in wanted.items():
+            if name not in existing:
+                db.session.execute(
+                    text(f"ALTER TABLE user_settings ADD COLUMN {name} {ddl}"))
+                print(f"[startup] user_settings に列を追加: {name}")
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001 マイグレーション失敗でも起動は続ける
+        print(f"[startup] スキーマ補正をスキップ: {exc}")
+        try:
+            db.session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def _seed_admin() -> None:

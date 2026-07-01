@@ -16,7 +16,8 @@ services:
       FAKEOUT_MODEL_PATH: /app/instance/fakeout_model.json
       PAPER_DB_PATH: /app/instance/paper.db
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - app_instance:/app/instance
     restart: unless-stopped
@@ -35,8 +36,8 @@ services:
       FAKEOUT_MODEL_PATH: /app/instance/fakeout_model.json
       PAPER_DB_PATH: /app/instance/paper.db
     depends_on:
-      - db
-      - web
+      db:
+        condition: service_healthy
     volumes:
       - app_instance:/app/instance
     restart: unless-stopped
@@ -49,6 +50,11 @@ services:
       POSTGRES_DB: easy_login_system_app
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d easy_login_system_app"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     restart: unless-stopped
 
 volumes:
