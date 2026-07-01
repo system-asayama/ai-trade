@@ -65,6 +65,25 @@ python app.py
 OANDA v20 API を用いた AI 自動売買システムを構築中です。設計の全体像は
 [`docs/DESIGN.md`](docs/DESIGN.md) を参照してください。
 
+### マルチテナント（各ユーザーがAPIキーを持ち込み）
+
+ユーザー（法人）ごとに、自分の OANDA / Anthropic のAPIキーと設定を
+**Web画面 `/trading/settings` から登録**できます。
+
+- APIキーは `cryptobox`（標準ライブラリのみのHMAC-SHA256認証付き暗号）で
+  **暗号化して保存**。画面に生のキーは表示されません
+- 各ユーザーの設定は `models.UserSettings` に保存され、`trading/tenant.py` が
+  そこから `Settings` とエンジンを組み立てます
+- 常駐ランナー `scripts/run_multi.py` が `engine_enabled` の全ユーザーを
+  それぞれの設定・キーで実行します
+
+```bash
+python scripts/run_multi.py --poll 60   # 有効化ユーザーを60秒毎に実行
+```
+
+暗号化鍵は `APP_ENCRYPTION_KEY`（未設定なら `SECRET_KEY` から導出）。本番では
+必ずランダムな値を設定してください。
+
 ### 現在の実装（Phase 1: データ取得・指標・分析・バックテスト）
 
 `trading/` パッケージ:

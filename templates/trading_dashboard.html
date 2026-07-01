@@ -17,6 +17,7 @@
   {% endif %}
 
   <div class="inline" style="margin-top:12px;">
+    <a href="{{ url_for('trading.settings_view') }}"><button class="small" type="button">⚙️ 設定（APIキー等）</button></a>
     {% if breaker.killed %}
       <form method="post" action="{{ url_for('trading.reset_kill') }}">
         <button class="small">キルスイッチ解除</button>

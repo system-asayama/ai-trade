@@ -19,6 +19,7 @@ from flask import (
     flash,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
@@ -90,6 +91,73 @@ def reset_kill():
     breaker.reset_kill()
     flash("キルスイッチを解除しました。", "success")
     return redirect(url_for("trading.overview"))
+
+
+def _current_user_id():
+    return session.get("user_id")
+
+
+@trading_bp.route("/settings", methods=["GET"])
+@_login_required
+def settings_view():
+    from models import UserSettings
+
+    us = UserSettings.get_or_create(_current_user_id())
+    return render_template("trading_settings.html", s=us)
+
+
+@trading_bp.route("/settings", methods=["POST"])
+@_login_required
+def settings_save():
+    from models import UserSettings, db
+
+    us = UserSettings.get_or_create(_current_user_id())
+    form = request.form
+
+    # 秘密情報: 入力があった場合のみ更新（空欄なら既存を維持）
+    token = (form.get("oanda_token") or "").strip()
+    if token:
+        us.set_oanda_token(token)
+    akey = (form.get("anthropic_key") or "").strip()
+    if akey:
+        us.set_anthropic_key(akey)
+    # 明示的なクリア
+    if form.get("clear_oanda_token"):
+        us.oanda_token_enc = None
+    if form.get("clear_anthropic_key"):
+        us.anthropic_key_enc = None
+
+    # 非秘密の設定
+    us.oanda_account_id = (form.get("oanda_account_id") or "").strip() or None
+    us.oanda_env = form.get("oanda_env") if form.get("oanda_env") in ("practice", "live") else "practice"
+    us.instruments = (form.get("instruments") or "USD_JPY,EUR_USD").strip()
+    us.risk_per_trade = _num(form.get("risk_per_trade"), 0.5)
+    us.max_open_positions = int(_num(form.get("max_open_positions"), 2))
+    us.econ_calendar_url = (form.get("econ_calendar_url") or "").strip() or None
+    us.econ_blackout_before_min = int(_num(form.get("econ_blackout_before_min"), 30))
+    us.econ_blackout_after_min = int(_num(form.get("econ_blackout_after_min"), 15))
+
+    us.enable_news = bool(form.get("enable_news"))
+    us.enable_ml = bool(form.get("enable_ml"))
+    us.enable_council = bool(form.get("enable_council"))
+    us.enable_calendar = bool(form.get("enable_calendar"))
+    us.engine_enabled = bool(form.get("engine_enabled"))
+
+    # live を選ぶには OANDA トークンが必須（安全装置）
+    if us.oanda_env == "live" and not us.has_oanda_token:
+        us.oanda_env = "practice"
+        flash("OANDAトークン未設定のため practice に戻しました。", "error")
+
+    db.session.commit()
+    flash("設定を保存しました。", "success")
+    return redirect(url_for("trading.settings_view"))
+
+
+def _num(value, default):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def register_dashboard(app, login_required=None):

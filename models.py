@@ -35,3 +35,79 @@ class User(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover - デバッグ用
         return f"<User {self.username} ({self.role})>"
+
+
+class UserSettings(db.Model):
+    """ユーザー（法人）ごとのトレード設定。各自が自分のAPIキーを持ち込む。
+
+    秘密情報（OANDA/Anthropic のキー）は cryptobox で暗号化して保存する。
+    """
+
+    __tablename__ = "user_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+
+    # --- OANDA（売買の土台） ---
+    oanda_token_enc = db.Column(db.Text)          # 暗号化保存
+    oanda_account_id = db.Column(db.String(64))
+    oanda_env = db.Column(db.String(16), default="practice")
+
+    # --- 取引対象・リスク ---
+    instruments = db.Column(db.String(255), default="USD_JPY,EUR_USD")
+    risk_per_trade = db.Column(db.Float, default=0.5)
+    max_open_positions = db.Column(db.Integer, default=2)
+
+    # --- Claude（ニュース/中銀解析・AI合議） ---
+    anthropic_key_enc = db.Column(db.Text)        # 暗号化保存
+
+    # --- 経済指標カレンダー ---
+    econ_calendar_url = db.Column(db.String(512))
+    econ_blackout_before_min = db.Column(db.Integer, default=30)
+    econ_blackout_after_min = db.Column(db.Integer, default=15)
+
+    # --- 機能トグル ---
+    enable_news = db.Column(db.Boolean, default=False)
+    enable_ml = db.Column(db.Boolean, default=False)
+    enable_council = db.Column(db.Boolean, default=False)
+    enable_calendar = db.Column(db.Boolean, default=False)
+    # このユーザーのボットを常駐ランナーで動かすか
+    engine_enabled = db.Column(db.Boolean, default=False)
+
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("settings", uselist=False))
+
+    # -- 秘密情報のアクセサ（暗号化/復号） --------------------------------
+    def set_oanda_token(self, plaintext: str) -> None:
+        from trading.cryptobox import encrypt
+        self.oanda_token_enc = encrypt(plaintext) if plaintext else None
+
+    def get_oanda_token(self) -> str:
+        from trading.cryptobox import decrypt
+        return decrypt(self.oanda_token_enc)
+
+    def set_anthropic_key(self, plaintext: str) -> None:
+        from trading.cryptobox import encrypt
+        self.anthropic_key_enc = encrypt(plaintext) if plaintext else None
+
+    def get_anthropic_key(self) -> str:
+        from trading.cryptobox import decrypt
+        return decrypt(self.anthropic_key_enc)
+
+    @property
+    def has_oanda_token(self) -> bool:
+        return bool(self.oanda_token_enc)
+
+    @property
+    def has_anthropic_key(self) -> bool:
+        return bool(self.anthropic_key_enc)
+
+    @classmethod
+    def get_or_create(cls, user_id: int) -> "UserSettings":
+        obj = cls.query.filter_by(user_id=user_id).first()
+        if obj is None:
+            obj = cls(user_id=user_id)
+            db.session.add(obj)
+            db.session.commit()
+        return obj

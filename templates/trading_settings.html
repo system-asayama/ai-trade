@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}トレード設定{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>⚙️ トレード設定（あなた専用）</h1>
+  <p class="muted">
+    APIキーはあなたのアカウント専用に保存され、暗号化されます。
+    キー欄は空欄のまま保存すると既存の値を維持します。
+  </p>
+
+  <form method="post" action="{{ url_for('trading.settings_save') }}">
+
+    <h1 style="font-size:17px;">OANDA（売買の土台）</h1>
+    <label>OANDA APIトークン
+      <span class="badge {{ 'admin' if s.has_oanda_token else 'user' }}">
+        {{ '設定済み' if s.has_oanda_token else '未設定' }}
+      </span>
+    </label>
+    <input type="password" name="oanda_token" autocomplete="off"
+           placeholder="{{ '変更する場合のみ入力' if s.has_oanda_token else 'トークンを入力' }}">
+    {% if s.has_oanda_token %}
+      <label class="inline"><input type="checkbox" name="clear_oanda_token" style="width:auto;"> トークンを削除する</label>
+    {% endif %}
+
+    <label>OANDA アカウントID</label>
+    <input type="text" name="oanda_account_id" value="{{ s.oanda_account_id or '' }}"
+           placeholder="xxx-xxx-xxxxxxx-xxx">
+
+    <label>環境</label>
+    <select name="oanda_env">
+      <option value="practice" {{ 'selected' if s.oanda_env != 'live' else '' }}>practice（デモ・推奨）</option>
+      <option value="live" {{ 'selected' if s.oanda_env == 'live' else '' }}>live（実弁・要注意）</option>
+    </select>
+
+    <h1 style="font-size:17px;">取引対象・リスク</h1>
+    <label>通貨ペア（カンマ区切り）</label>
+    <input type="text" name="instruments" value="{{ s.instruments or 'USD_JPY,EUR_USD' }}">
+    <label>1トレードのリスク(%)</label>
+    <input type="number" step="0.1" name="risk_per_trade" value="{{ s.risk_per_trade }}">
+    <label>最大同時保有数</label>
+    <input type="number" name="max_open_positions" value="{{ s.max_open_positions }}">
+
+    <h1 style="font-size:17px;">AI機能</h1>
+    <label>Anthropic APIキー（ニュース解析・AI合議に使用）
+      <span class="badge {{ 'admin' if s.has_anthropic_key else 'user' }}">
+        {{ '設定済み' if s.has_anthropic_key else '未設定' }}
+      </span>
+    </label>
+    <input type="password" name="anthropic_key" autocomplete="off"
+           placeholder="{{ '変更する場合のみ入力' if s.has_anthropic_key else 'sk-ant-...' }}">
+    {% if s.has_anthropic_key %}
+      <label class="inline"><input type="checkbox" name="clear_anthropic_key" style="width:auto;"> キーを削除する</label>
+    {% endif %}
+
+    <label class="inline"><input type="checkbox" name="enable_news" style="width:auto;" {{ 'checked' if s.enable_news }}> ニュース/中銀発言の解析を使う</label>
+    <label class="inline"><input type="checkbox" name="enable_council" style="width:auto;" {{ 'checked' if s.enable_council }}> AI合議を使う</label>
+    <label class="inline"><input type="checkbox" name="enable_ml" style="width:auto;" {{ 'checked' if s.enable_ml }}> ダマシ予測ML を使う</label>
+
+    <h1 style="font-size:17px;">経済指標カレンダー</h1>
+    <label class="inline"><input type="checkbox" name="enable_calendar" style="width:auto;" {{ 'checked' if s.enable_calendar }}> 危険度フィルタを使う</label>
+    <label>カレンダーAPIのURL（JSON）</label>
+    <input type="text" name="econ_calendar_url" value="{{ s.econ_calendar_url or '' }}"
+           placeholder="https://example.com/calendar.json">
+    <div class="inline">
+      <div style="flex:1;">
+        <label>前ブラックアウト(分)</label>
+        <input type="number" name="econ_blackout_before_min" value="{{ s.econ_blackout_before_min }}">
+      </div>
+      <div style="flex:1;">
+        <label>後ブラックアウト(分)</label>
+        <input type="number" name="econ_blackout_after_min" value="{{ s.econ_blackout_after_min }}">
+      </div>
+    </div>
+
+    <h1 style="font-size:17px;">稼働</h1>
+    <label class="inline"><input type="checkbox" name="engine_enabled" style="width:auto;" {{ 'checked' if s.engine_enabled }}> このアカウントで自動売買を有効にする（要 OANDAトークン）</label>
+
+    <button type="submit">保存</button>
+    <a href="{{ url_for('trading.overview') }}" class="link" style="margin-left:12px;">← ダッシュボードへ</a>
+  </form>
+</div>
+
+{% endblock %}
