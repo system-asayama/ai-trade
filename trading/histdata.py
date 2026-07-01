@@ -61,12 +61,20 @@ def parse_m1_text(text: str) -> pd.DataFrame:
 
 
 def parse_zip_bytes(data: bytes) -> pd.DataFrame:
-    """HistData の ZIP（中に CSV）を読み込んで M1 DataFrame にする。"""
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
-        if not names:
-            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-        text = zf.read(names[0]).decode("utf-8", errors="ignore")
+    """HistData の ZIP（中に CSV）を読み込んで M1 DataFrame にする。
+
+    ダウンロード失敗時に ZIP でない内容（HTML等）が来ても落ちないよう、
+    不正な ZIP は空として扱う。
+    """
+    empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            names = [n for n in zf.namelist() if n.lower().endswith(".csv")]
+            if not names:
+                return empty
+            text = zf.read(names[0]).decode("utf-8", errors="ignore")
+    except zipfile.BadZipFile:
+        return empty
     return parse_m1_text(text)
 
 
@@ -146,18 +154,8 @@ def import_m1_bytes(store: HistStore, instrument: str, data: bytes,
     return store.import_df(instrument, "M15", m15)
 
 
-def download_year(instrument: str, year: int, session: Optional[Any] = None) -> bytes:
-    """HistData から指定年の M1 ZIP を取得する（ベストエフォート）。
-
-    サイトのトークン方式に依存するため、失敗することがある。その場合は
-    手動でダウンロードしたファイルを import_m1_bytes で取り込む。
-    """
-    import requests
-
-    session = session or requests.Session()
-    pair = to_pair(instrument)
-    referer = ("https://www.histdata.com/download-free-forex-historical-data/"
-               f"?/ascii/1-minute-bar-quotes/{pair}/{year}")
+def _download(referer: str, session: Any) -> bytes:
+    """HistData のダウンロードページのトークンを読み、ZIP を取得する。"""
     html = session.get(referer, headers={"User-Agent": _UA}, timeout=30).text
 
     def field(name: str, default: str = "") -> str:
@@ -167,13 +165,37 @@ def download_year(instrument: str, year: int, session: Optional[Any] = None) -> 
 
     data = {
         "tk": field("tk"),
-        "date": field("date", str(year)),
-        "datemonth": field("datemonth", str(year)),
+        "date": field("date"),
+        "datemonth": field("datemonth"),
         "platform": field("platform", "ASCII"),
         "timeframe": field("timeframe", "M1"),
-        "fxpair": field("fxpair", pair.upper()),
+        "fxpair": field("fxpair"),
     }
     resp = session.post("https://www.histdata.com/get.php", data=data,
                         headers={"User-Agent": _UA, "Referer": referer}, timeout=60)
     resp.raise_for_status()
     return resp.content
+
+
+def _base_referer(pair: str) -> str:
+    return ("https://www.histdata.com/download-free-forex-historical-data/"
+            f"?/ascii/1-minute-bar-quotes/{pair}")
+
+
+def download_year(instrument: str, year: int, session: Optional[Any] = None) -> bytes:
+    """指定年の M1 ZIP を取得する（過去の完結した年向け・ベストエフォート）。"""
+    import requests
+
+    session = session or requests.Session()
+    pair = to_pair(instrument)
+    return _download(f"{_base_referer(pair)}/{year}", session)
+
+
+def download_month(instrument: str, year: int, month: int,
+                   session: Optional[Any] = None) -> bytes:
+    """指定年月の M1 ZIP を取得する（進行中の年＝月別提供のとき用）。"""
+    import requests
+
+    session = session or requests.Session()
+    pair = to_pair(instrument)
+    return _download(f"{_base_referer(pair)}/{year}/{month}", session)
