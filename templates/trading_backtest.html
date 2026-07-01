@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}バックテスト{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>🧪 バックテスト（コスト込み・無料リアル過去データ）</h1>
+  <p class="muted">
+    過去の本物の値動きでロボットを検証します。スプレッド・滑りを差し引くので、
+    実際に近い（少し不利な）成績になります。口座・登録は不要です。
+  </p>
+
+  <form method="post" action="{{ url_for('trading.backtest_run') }}">
+    <label>通貨ペア</label>
+    <select name="instrument">
+      {% for inst in settings.instruments %}
+        <option value="{{ inst }}" {{ 'selected' if form.instrument == inst else '' }}>{{ inst }}</option>
+      {% endfor %}
+    </select>
+    <div class="inline">
+      <div style="flex:1;">
+        <label>想定スプレッド（pips）</label>
+        <input type="number" step="0.1" name="spread_pips" value="{{ form.spread_pips }}">
+      </div>
+      <div style="flex:1;">
+        <label>想定スリッページ（pips）</label>
+        <input type="number" step="0.1" name="slippage_pips" value="{{ form.slippage_pips }}">
+      </div>
+    </div>
+    <button type="submit">実行する</button>
+    <a href="{{ url_for('trading.overview') }}" class="link" style="margin-left:12px;">← 戻る</a>
+  </form>
+</div>
+
+{% if error %}
+  <div class="card"><div class="flash error">{{ error }}</div></div>
+{% endif %}
+
+{% if summary %}
+<div class="card">
+  <h1>結果（{{ form.instrument }} / スプレッド {{ form.spread_pips }}pips）</h1>
+  <table>
+    <tr><th>取引数</th><td>{{ summary.num_trades }}</td>
+        <th>勝率</th><td>{{ "%.1f"|format(summary.win_rate * 100) }}%</td></tr>
+    <tr><th>合計R</th><td>{{ "%.2f"|format(summary.total_r) }}</td>
+        <th>期待値(R/取引)</th><td>{{ "%.2f"|format(summary.expectancy_r) }}</td></tr>
+    <tr><th>最大DD(R)</th><td>{{ "%.2f"|format(summary.max_drawdown_r) }}</td>
+        <th></th><td></td></tr>
+  </table>
+  <p class="muted">R は「1回の想定リスク」を1とした単位です。合計Rがプラスなら、
+  この期間・条件では有利だったことを示します（将来を保証しません）。</p>
+</div>
+
+{% if equity %}
+<div class="card">
+  <h1>資産曲線（累積R）</h1>
+  <canvas id="eq" height="120"></canvas>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script>
+  new Chart(document.getElementById('eq'), {
+    type: 'line',
+    data: { labels: {{ range(equity|length) | list | tojson }},
+            datasets: [{ label: '累積R', data: {{ equity | tojson }},
+                         borderColor: '#3b5bdb', backgroundColor: 'rgba(59,91,219,.1)',
+                         fill: true, tension: 0.2, pointRadius: 0 }] },
+    options: { plugins: { legend: { display: false } } }
+  });
+</script>
+{% endif %}
+
+<div class="card">
+  <h1>取引一覧（最新50件）</h1>
+  <table>
+    <tr><th>方向</th><th>建値</th><th>決済</th><th>R</th><th>理由</th></tr>
+    {% for t in result.closed[-50:] | reverse %}
+    <tr>
+      <td>{{ t.side }}</td>
+      <td>{{ "%.5f"|format(t.entry_price) }}</td>
+      <td>{{ "%.5f"|format(t.exit_price) }}</td>
+      <td>{{ "%.2f"|format(t.r_multiple) }}</td>
+      <td>{{ t.exit_reason }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">取引が発生しませんでした。</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <p class="muted">⚠️ バックテストの好成績は将来の利益を保証しません（過去に最適化しすぎる
+  「過学習」に注意）。実際のスプレッドは指標発表時などに広がるため、ここでの想定より
+  不利になることがあります。</p>
+</div>
+{% endif %}
+
+{% endblock %}

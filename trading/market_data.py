@@ -49,10 +49,13 @@ class YahooMarketData:
             self._session = None
 
     def get_candles(self, instrument: str, granularity: str,
-                    count: int = 500, price: str = "M") -> List[Dict[str, Any]]:
+                    count: int = 500, price: str = "M",
+                    range_override: Optional[str] = None) -> List[Dict[str, Any]]:
         if self._session is None:  # pragma: no cover
             raise RuntimeError("requests が利用できません。")
         interval, rng, resample_to = _INTERVAL.get(granularity, ("15m", "1mo", None))
+        if range_override:
+            rng = range_override
         url = _CHART_URL.format(symbol=to_symbol(instrument))
         resp = self._session.get(url, params={"interval": interval, "range": rng},
                                  headers={"User-Agent": _UA}, timeout=30)

@@ -104,6 +104,69 @@ def _current_user_id():
     return session.get("user_id")
 
 
+@trading_bp.route("/backtest", methods=["GET"])
+@_login_required
+def backtest_view():
+    settings = Settings()
+    return render_template("trading_backtest.html", settings=settings, result=None,
+                          form={"instrument": settings.instruments[0],
+                                "spread_pips": 0.8, "slippage_pips": 0.2})
+
+
+@trading_bp.route("/backtest", methods=["POST"])
+@_login_required
+def backtest_run():
+    from .backtester import Backtester
+    from .data_feed import candles_to_df
+    from .market_data import YahooMarketData
+
+    settings = Settings()
+    form = {
+        "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
+        "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
+        "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
+    }
+    error = None
+    result = None
+    summary = None
+    equity = []
+    try:
+        candles = YahooMarketData().get_candles(
+            form["instrument"], settings.trigger_granularity,
+            count=5000, range_override="60d")
+        df = candles_to_df(candles)
+        if len(df) < max(settings.ema_slow, 60):
+            error = "過去データが不足しています（別の通貨ペアを試すか、後で再実行してください）。"
+        else:
+            bt = Backtester(settings, spread_pips=form["spread_pips"],
+                            slippage_pips=form["slippage_pips"])
+            result = bt.run(form["instrument"], df)
+            summary = result.summary()
+            equity = _equity_curve(result)
+    except Exception as exc:  # noqa: BLE001
+        error = f"データ取得に失敗しました: {exc}"
+
+    return render_template("trading_backtest.html", settings=settings, form=form,
+                          result=result, summary=summary, equity=equity, error=error)
+
+
+def _fnum(value, default):
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _equity_curve(result):
+    """決済順の累積R系列（グラフ用）。"""
+    cum = 0.0
+    points = []
+    for t in sorted(result.closed, key=lambda x: x.exit_time or 0):
+        cum += t.r_multiple
+        points.append(round(cum, 4))
+    return points
+
+
 @trading_bp.route("/settings", methods=["GET"])
 @_login_required
 def settings_view():

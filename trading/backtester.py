@@ -94,8 +94,17 @@ class BacktestResult:
 class Backtester:
     """単一インストルメント・単一ポジションのバックテスター。"""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, spread_pips: float = 0.0,
+                 slippage_pips: float = 0.0) -> None:
         self.settings = settings
+        # 取引コスト（pips）。スプレッドは往復で不利に、滑りは片側ごとに不利に働く
+        self.spread_pips = float(spread_pips)
+        self.slippage_pips = float(slippage_pips)
+        self._pip = 0.01  # run() で通貨ペアに応じて設定
+
+    def _cost(self) -> float:
+        """片側あたりの不利な価格ずれ（スプレッド半分＋滑り）を価格単位で返す。"""
+        return self._pip * (self.spread_pips / 2.0 + self.slippage_pips)
 
     def _htf_states_at(
         self, htf_indicators: Dict[str, pd.DataFrame], when: pd.Timestamp
@@ -128,6 +137,7 @@ class Backtester:
         """
         settings = self.settings
         result = BacktestResult(instrument=instrument)
+        self._pip = 0.01 if instrument.endswith("_JPY") else 0.0001
 
         trigger = analysis.add_indicators(trigger_df, settings)
 
@@ -173,13 +183,16 @@ class Backtester:
 
     # -- ポジション操作 ------------------------------------------------------
     def _open(self, instrument: str, signal, bar, when) -> BacktestTrade:
-        entry = signal.price
         atr_value = signal.atr or float(bar.get("atr", 0.0) or 0.0)
         dist = self.settings.atr_stop_mult * atr_value
+        cost = self._cost()
+        # 約定はスプレッド/滑りの分だけ不利側に入る
         if signal.side == SIGNAL_BUY:
-            stop = entry - dist
+            entry = signal.price + cost   # 買いは高く約定
+            stop = signal.price - dist
         else:
-            stop = entry + dist
+            entry = signal.price - cost   # 売りは安く約定
+            stop = signal.price + dist
         return BacktestTrade(
             instrument=instrument,
             side=signal.side,
@@ -211,13 +224,17 @@ class Backtester:
         return pos
 
     def _close(self, pos: BacktestTrade, when, price, reason, result: BacktestResult) -> None:
-        pos.exit_time = when
-        pos.exit_price = price
-        pos.exit_reason = reason
+        cost = self._cost()
+        # 決済もスプレッド/滑りの分だけ不利側で約定する
         if pos.side == SIGNAL_BUY:
-            pos.pnl_points = price - pos.entry_price
+            exit_price = price - cost
+            pos.pnl_points = exit_price - pos.entry_price
         else:
-            pos.pnl_points = pos.entry_price - price
+            exit_price = price + cost
+            pos.pnl_points = pos.entry_price - exit_price
+        pos.exit_time = when
+        pos.exit_price = exit_price
+        pos.exit_reason = reason
         # R倍数はエントリー時の初期リスク幅で正規化（トレーリング後のストップではない）
         risk = pos.initial_risk
         pos.r_multiple = pos.pnl_points / risk if risk > 0 else 0.0

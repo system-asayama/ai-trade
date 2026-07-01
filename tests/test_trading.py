@@ -122,6 +122,15 @@ def test_backtest_runs_and_produces_trades():
             assert t.r_multiple >= -1.0 - 1e-9
 
 
+def test_backtest_costs_reduce_performance():
+    settings = _settings()
+    df = make_ohlcv(3000)
+    base = Backtester(settings).run("USD_JPY", df).total_r
+    costly = Backtester(settings, spread_pips=2.0, slippage_pips=1.0).run("USD_JPY", df).total_r
+    # スプレッド/滑りを差し引くと成績は必ず下がる
+    assert costly < base
+
+
 def _linear_df(start: float, end: float, n: int = 300) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz="UTC")
     close = np.linspace(start, end, n)
