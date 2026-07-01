@@ -136,6 +136,15 @@ def test_settings_save_and_persist():
 def test_settings_live_without_token_forced_practice():
     c = _client()
     c.post("/admin/login", data={"username": "admin", "password": "admin123"})
+    # 他テストが同じ管理ユーザーにトークンを保存している場合があるため、
+    # 「トークン未設定」の前提を確実にするため事前にクリアする（テスト分離）。
+    from models import UserSettings, db
+    import app as app_module
+    with app_module.app.app_context():
+        us = UserSettings.query.first()
+        if us is not None:
+            us.oanda_token_enc = None
+            db.session.commit()
     # トークン未設定で live を選んでも practice に戻る
     c.post("/trading/settings", data={
         "oanda_env": "live", "instruments": "USD_JPY",

@@ -67,6 +67,39 @@
   この期間・条件では有利だったことを示します（将来を保証しません）。</p>
 </div>
 
+{% if result and result.diagnostics %}
+{% set d = result.diagnostics %}
+<div class="card">
+  <h1>🔎 エントリー条件の通過状況</h1>
+  <p class="muted">
+    このロボットは「上位足の方向一致 → その向きにブレイク → 勢い(ATR) → 出来高」の
+    4つを<strong>すべて</strong>満たしたときだけ売買します。厳しい条件なので、期間によっては
+    0件になることもあります（バグではありません）。どこで絞られたかを下に示します。
+  </p>
+  <table>
+    <tr><th>① 評価したバー数</th><td>{{ d.bars }}</td></tr>
+    <tr><th>② 上位足の方向が一致</th><td>{{ d.mtf_aligned }} 本</td></tr>
+    <tr><th>③ さらにその向きへブレイク</th><td>{{ d.breakout }} 本</td></tr>
+    <tr><th>④ さらに勢い(ATR)条件も通過</th><td>{{ d.atr_pass }} 本</td></tr>
+    <tr><th>⑤ さらに出来高も通過＝エントリー</th><td><strong>{{ d.entries }} 本</strong></td></tr>
+  </table>
+  {% if summary.num_trades == 0 %}
+    <p class="muted">
+      {% if d.mtf_aligned == 0 %}
+        👉 この期間は<strong>上位足（H1・H4・日足）の向きが一度もそろいませんでした</strong>。
+        レンジ相場が続いた期間だと、この条件で止まります。より長い期間や別の通貨ペアをお試しください。
+      {% elif d.breakout == 0 %}
+        👉 上位足はそろいましたが、その向きへの<strong>明確なブレイクが起きませんでした</strong>。
+      {% elif d.atr_pass == 0 %}
+        👉 ブレイクはありましたが、<strong>値動きの勢い(ATR)が不足</strong>していました。
+      {% else %}
+        👉 最後の<strong>出来高条件</strong>で止まりました。
+      {% endif %}
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if equity %}
 <div class="card">
   <h1>資産曲線（累積R）</h1>

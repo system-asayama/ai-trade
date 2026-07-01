@@ -44,6 +44,8 @@ class BacktestTrade:
 class BacktestResult:
     instrument: str
     trades: List[BacktestTrade] = field(default_factory=list)
+    # 各フィルタ段階を何本のバーが通過したかの集計（「なぜ0取引か」を可視化する）
+    diagnostics: Dict[str, int] = field(default_factory=dict)
 
     @property
     def closed(self) -> List[BacktestTrade]:
@@ -150,6 +152,15 @@ class Backtester:
         warmup = max(settings.ema_slow, settings.breakout_lookback + 1)
         position: Optional[BacktestTrade] = None
 
+        # 「なぜエントリーしなかったか」を段階別に集計する
+        diag = {
+            "bars": 0,          # 評価したバー数
+            "mtf_aligned": 0,   # 上位足の方向が一致していたバー
+            "breakout": 0,      # 方向一致 かつ その向きにブレイクしたバー
+            "atr_pass": 0,      # さらにATR（勢い）条件を満たしたバー
+            "entries": 0,       # 最終的にエントリーしたバー
+        }
+
         # strategy.evaluate は直近の一定本数しか参照しないため、毎バー全履歴を
         # スライスせず「直近 window 本」だけ渡す（O(n^2)→O(n) に高速化）。
         window = max(settings.breakout_lookback + 1, settings.volume_lookback + 1, 150)
@@ -167,6 +178,20 @@ class Backtester:
             mtf = self._htf_states_at(htf_indicators, when)
             signal = strategy.evaluate(slice_df, mtf, settings)
 
+            # フィルタ段階の集計（signal.reason の内容から段階を判定）
+            diag["bars"] += 1
+            if mtf.is_aligned:
+                diag["mtf_aligned"] += 1
+                rsn = signal.reason
+                broke = rsn.get("breakout") == mtf.aligned
+                if broke:
+                    diag["breakout"] += 1
+                    if "volume" in rsn or signal.is_entry:
+                        # ATR段階は通過（volume段階で落ちた or 成立）
+                        diag["atr_pass"] += 1
+                    if signal.is_entry:
+                        diag["entries"] += 1
+
             if position is not None:
                 # 反対シグナルが出たらクローズ
                 if signal.is_entry and signal.side != position.side:
@@ -183,6 +208,7 @@ class Backtester:
             self._close(position, trigger.index[-1], float(last_bar["close"]),
                         "end_of_data", result)
 
+        result.diagnostics = diag
         return result
 
     # -- ポジション操作 ------------------------------------------------------
