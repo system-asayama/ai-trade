@@ -68,8 +68,7 @@ def overview():
     context = {
         "settings": settings,
         "broker": broker,
-        "broker_env": ("paper" if broker == "paper"
-                       else us.capital_env if broker == "capital" else us.oanda_env),
+        "broker_env": ("paper" if broker == "paper" else us.oanda_env),
         "broker_ready": us.broker_ready,
         "summary": metrics.summary(closed),
         "by_instrument": metrics.group_stats(closed, "instrument"),
@@ -123,7 +122,7 @@ def settings_save():
     form = request.form
 
     # ブローカー選択
-    us.broker = form.get("broker") if form.get("broker") in ("oanda", "capital", "paper") else "oanda"
+    us.broker = form.get("broker") if form.get("broker") in ("oanda", "paper") else "oanda"
 
     # 秘密情報: 入力があった場合のみ更新（空欄なら既存を維持）
     token = (form.get("oanda_token") or "").strip()
@@ -132,26 +131,15 @@ def settings_save():
     akey = (form.get("anthropic_key") or "").strip()
     if akey:
         us.set_anthropic_key(akey)
-    cap_key = (form.get("capital_api_key") or "").strip()
-    if cap_key:
-        us.set_capital_api_key(cap_key)
-    cap_pw = (form.get("capital_password") or "").strip()
-    if cap_pw:
-        us.set_capital_password(cap_pw)
     # 明示的なクリア
     if form.get("clear_oanda_token"):
         us.oanda_token_enc = None
     if form.get("clear_anthropic_key"):
         us.anthropic_key_enc = None
-    if form.get("clear_capital_key"):
-        us.capital_api_key_enc = None
-        us.capital_password_enc = None
 
     # 非秘密の設定
     us.oanda_account_id = (form.get("oanda_account_id") or "").strip() or None
     us.oanda_env = form.get("oanda_env") if form.get("oanda_env") in ("practice", "live") else "practice"
-    us.capital_identifier = (form.get("capital_identifier") or "").strip() or None
-    us.capital_env = form.get("capital_env") if form.get("capital_env") in ("demo", "live") else "demo"
     us.instruments = (form.get("instruments") or "USD_JPY,EUR_USD").strip()
     us.risk_per_trade = _num(form.get("risk_per_trade"), 0.5)
     us.max_open_positions = int(_num(form.get("max_open_positions"), 2))

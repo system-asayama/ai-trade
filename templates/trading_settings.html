@@ -16,7 +16,6 @@
     <select name="broker" id="brokerSel" onchange="toggleBroker()">
       <option value="paper" {{ 'selected' if s.broker == 'paper' else '' }}>ペーパー（リアル価格・登録不要・無料）</option>
       <option value="oanda" {{ 'selected' if (s.broker or 'oanda') == 'oanda' else '' }}>OANDA</option>
-      <option value="capital" {{ 'selected' if s.broker == 'capital' else '' }}>Capital.com</option>
     </select>
 
     <div id="sec-paper">
@@ -45,31 +44,6 @@
     <select name="oanda_env">
       <option value="practice" {{ 'selected' if s.oanda_env != 'live' else '' }}>practice（デモ・推奨）</option>
       <option value="live" {{ 'selected' if s.oanda_env == 'live' else '' }}>live（実弁・要注意）</option>
-    </select>
-    </div>
-
-    <div id="sec-capital">
-    <h1 style="font-size:17px;">Capital.com（売買の土台）</h1>
-    <label>Capital.com APIキー
-      <span class="badge {{ 'admin' if s.has_capital_key else 'user' }}">
-        {{ '設定済み' if s.has_capital_key else '未設定' }}
-      </span>
-    </label>
-    <input type="password" name="capital_api_key" autocomplete="off"
-           placeholder="{{ '変更する場合のみ入力' if s.has_capital_key else 'APIキーを入力' }}">
-    <label>ログインID（メールアドレス）</label>
-    <input type="text" name="capital_identifier" value="{{ s.capital_identifier or '' }}"
-           placeholder="you@example.com">
-    <label>API用パスワード（APIキー発行時に設定したもの）</label>
-    <input type="password" name="capital_password" autocomplete="off"
-           placeholder="{{ '変更する場合のみ入力' if s.has_capital_key else 'パスワードを入力' }}">
-    {% if s.has_capital_key %}
-      <label class="inline"><input type="checkbox" name="clear_capital_key" style="width:auto;"> Capital.comの情報を削除する</label>
-    {% endif %}
-    <label>環境</label>
-    <select name="capital_env">
-      <option value="demo" {{ 'selected' if s.capital_env != 'live' else '' }}>demo（デモ・推奨）</option>
-      <option value="live" {{ 'selected' if s.capital_env == 'live' else '' }}>live（実弁・要注意）</option>
     </select>
     </div>
 
@@ -126,7 +100,6 @@
     var b = document.getElementById('brokerSel').value;
     document.getElementById('sec-paper').style.display = (b === 'paper') ? '' : 'none';
     document.getElementById('sec-oanda').style.display = (b === 'oanda') ? '' : 'none';
-    document.getElementById('sec-capital').style.display = (b === 'capital') ? '' : 'none';
   }
   toggleBroker();
 </script>

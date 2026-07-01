@@ -48,19 +48,13 @@ class UserSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
 
-    # --- ブローカー選択（oanda / capital） ---
+    # --- ブローカー選択（oanda / paper） ---
     broker = db.Column(db.String(16), default="oanda")
 
     # --- OANDA（売買の土台） ---
     oanda_token_enc = db.Column(db.Text)          # 暗号化保存
     oanda_account_id = db.Column(db.String(64))
     oanda_env = db.Column(db.String(16), default="practice")
-
-    # --- Capital.com ---
-    capital_api_key_enc = db.Column(db.Text)      # 暗号化保存
-    capital_password_enc = db.Column(db.Text)     # 暗号化保存
-    capital_identifier = db.Column(db.String(128))  # ログインID/メール
-    capital_env = db.Column(db.String(16), default="demo")
 
     # --- 取引対象・リスク ---
     instruments = db.Column(db.String(255), default="USD_JPY,EUR_USD")
@@ -104,29 +98,9 @@ class UserSettings(db.Model):
         from trading.cryptobox import decrypt
         return decrypt(self.anthropic_key_enc)
 
-    def set_capital_api_key(self, plaintext: str) -> None:
-        from trading.cryptobox import encrypt
-        self.capital_api_key_enc = encrypt(plaintext) if plaintext else None
-
-    def get_capital_api_key(self) -> str:
-        from trading.cryptobox import decrypt
-        return decrypt(self.capital_api_key_enc)
-
-    def set_capital_password(self, plaintext: str) -> None:
-        from trading.cryptobox import encrypt
-        self.capital_password_enc = encrypt(plaintext) if plaintext else None
-
-    def get_capital_password(self) -> str:
-        from trading.cryptobox import decrypt
-        return decrypt(self.capital_password_enc)
-
     @property
     def has_oanda_token(self) -> bool:
         return bool(self.oanda_token_enc)
-
-    @property
-    def has_capital_key(self) -> bool:
-        return bool(self.capital_api_key_enc)
 
     @property
     def has_anthropic_key(self) -> bool:
@@ -138,9 +112,6 @@ class UserSettings(db.Model):
         broker = self.broker or "oanda"
         if broker == "paper":
             return True  # ペーパーは口座・鍵不要
-        if broker == "capital":
-            return bool(self.capital_api_key_enc and self.capital_password_enc
-                        and self.capital_identifier)
         return self.has_oanda_token
 
     @classmethod

@@ -25,13 +25,6 @@ def settings_from_user(us: Any) -> Settings:
     env = (us.oanda_env or "practice").lower()
     s.oanda_env = env if env in OANDA_HOSTS else "practice"
 
-    # Capital.com
-    if hasattr(us, "get_capital_api_key"):
-        s.capital_api_key = us.get_capital_api_key()
-        s.capital_password = us.get_capital_password()
-        s.capital_identifier = us.capital_identifier or ""
-        s.capital_env = (us.capital_env or "demo").lower()
-
     if us.instruments:
         s.instruments = [i.strip() for i in us.instruments.split(",") if i.strip()]
     if us.risk_per_trade is not None:

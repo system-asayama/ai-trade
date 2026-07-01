@@ -1,6 +1,6 @@
 """ブローカー選択のファクトリ。
 
-settings.broker に応じて OANDA / Capital.com のクライアントを返す。
+settings.broker に応じて ペーパー / OANDA のクライアントを返す。
 どちらも同一インターフェース（get_candles / get_pricing / get_open_trades /
 create_market_order / set_trade_stop_loss / close_trade / get_account_summary /
 get_trade）を実装しているため、エンジン側は差し替えを意識しない。
@@ -12,9 +12,8 @@ from typing import Any
 from .config import Settings
 
 BROKER_OANDA = "oanda"
-BROKER_CAPITAL = "capital"
 BROKER_PAPER = "paper"
-BROKERS = (BROKER_OANDA, BROKER_CAPITAL, BROKER_PAPER)
+BROKERS = (BROKER_OANDA, BROKER_PAPER)
 
 
 def make_broker_client(settings: Settings, session: Any = None, store: Any = None):
@@ -22,8 +21,5 @@ def make_broker_client(settings: Settings, session: Any = None, store: Any = Non
     if broker == BROKER_PAPER:
         from .paper_broker import PaperBroker
         return PaperBroker(settings, store=store)
-    if broker == BROKER_CAPITAL:
-        from .capital_client import CapitalClient
-        return CapitalClient(settings, session=session)
     from .oanda_client import OandaClient
     return OandaClient(settings, session=session)
