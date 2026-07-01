@@ -36,7 +36,6 @@ BREAKER_STATE_PATH = os.environ.get("BREAKER_STATE_PATH", "instance/breaker.json
 
 
 def build_engine(settings: Settings):
-    client = make_broker_client(settings)
     breaker = CircuitBreaker.load(
         settings,
         path=BREAKER_STATE_PATH,
@@ -54,8 +53,10 @@ def build_engine(settings: Settings):
         except Exception as exc:  # noqa: BLE001 起動時取得失敗は警告のみ
             print(f"カレンダー初期取得に失敗（後続ティックで再試行）: {exc}")
 
+    store = TradeStore()
+    client = make_broker_client(settings, store=store)  # ペーパー時は store 連携
     engine = TradingEngine(settings, client, breaker=breaker,
-                           store=TradeStore(), calendar=calendar)
+                           store=store, calendar=calendar)
     return engine, breaker
 
 

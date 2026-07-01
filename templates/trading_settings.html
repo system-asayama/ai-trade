@@ -14,9 +14,15 @@
     <h1 style="font-size:17px;">ブローカー（FX会社）</h1>
     <label>使う会社</label>
     <select name="broker" id="brokerSel" onchange="toggleBroker()">
+      <option value="paper" {{ 'selected' if s.broker == 'paper' else '' }}>ペーパー（リアル価格・登録不要・無料）</option>
       <option value="oanda" {{ 'selected' if (s.broker or 'oanda') == 'oanda' else '' }}>OANDA</option>
-      <option value="capital" {{ 'selected' if s.broker == 'capital' else '' }}>Capital.com（無料デモが作りやすい）</option>
+      <option value="capital" {{ 'selected' if s.broker == 'capital' else '' }}>Capital.com</option>
     </select>
+
+    <div id="sec-paper">
+      <p class="muted">本物の値動きでロボットを動かし、注文は仮想でシミュレーションします。
+      口座・入金・本人確認は不要です。まず試すのに最適（実弾の成績は保証しません）。</p>
+    </div>
 
     <div id="sec-oanda">
     <h1 style="font-size:17px;">OANDA（売買の土台）</h1>
@@ -118,6 +124,7 @@
 <script>
   function toggleBroker() {
     var b = document.getElementById('brokerSel').value;
+    document.getElementById('sec-paper').style.display = (b === 'paper') ? '' : 'none';
     document.getElementById('sec-oanda').style.display = (b === 'oanda') ? '' : 'none';
     document.getElementById('sec-capital').style.display = (b === 'capital') ? '' : 'none';
   }

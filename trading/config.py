@@ -59,6 +59,10 @@ class Settings:
     capital_password: str = field(default_factory=lambda: os.environ.get("CAPITAL_PASSWORD", ""))
     capital_env: str = field(default_factory=lambda: os.environ.get("CAPITAL_ENV", "demo"))
 
+    # --- ペーパートレード（リアル価格＋仮想約定） ---
+    paper_account: str = field(default_factory=lambda: os.environ.get("PAPER_ACCOUNT", "default"))
+    paper_balance: float = field(default_factory=lambda: _float_env("PAPER_BALANCE", 10000.0))
+
     # --- 取引対象 ---
     instruments: List[str] = field(
         default_factory=lambda: _split_env("INSTRUMENTS", ["USD_JPY", "EUR_USD"])

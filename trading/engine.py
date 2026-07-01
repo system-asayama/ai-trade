@@ -71,6 +71,13 @@ class TradingEngine:
     def run_once(self, today: str) -> TickResult:
         result = TickResult()
 
+        # ペーパー等: ストップ到達の仮想決済を先に処理
+        if hasattr(self.client, "settle"):
+            try:
+                self.client.settle()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("settle 失敗: %s", exc)
+
         summary = self.client.get_account_summary()
         result.balance = float(summary.get("balance") or summary.get("NAV") or 0.0)
 

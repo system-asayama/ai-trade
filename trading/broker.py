@@ -13,11 +13,15 @@ from .config import Settings
 
 BROKER_OANDA = "oanda"
 BROKER_CAPITAL = "capital"
-BROKERS = (BROKER_OANDA, BROKER_CAPITAL)
+BROKER_PAPER = "paper"
+BROKERS = (BROKER_OANDA, BROKER_CAPITAL, BROKER_PAPER)
 
 
-def make_broker_client(settings: Settings, session: Any = None):
+def make_broker_client(settings: Settings, session: Any = None, store: Any = None):
     broker = getattr(settings, "broker", BROKER_OANDA)
+    if broker == BROKER_PAPER:
+        from .paper_broker import PaperBroker
+        return PaperBroker(settings, store=store)
     if broker == BROKER_CAPITAL:
         from .capital_client import CapitalClient
         return CapitalClient(settings, session=session)

@@ -14,6 +14,7 @@ services:
       TRADES_DB_PATH: /app/instance/trading.db
       BREAKER_STATE_PATH: /app/instance/breaker.json
       FAKEOUT_MODEL_PATH: /app/instance/fakeout_model.json
+      PAPER_DB_PATH: /app/instance/paper.db
     depends_on:
       - db
     volumes:
@@ -32,6 +33,7 @@ services:
       TRADES_DB_PATH: /app/instance/trading.db
       BREAKER_STATE_PATH: /app/instance/breaker.json
       FAKEOUT_MODEL_PATH: /app/instance/fakeout_model.json
+      PAPER_DB_PATH: /app/instance/paper.db
     depends_on:
       - db
       - web

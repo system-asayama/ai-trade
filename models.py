@@ -135,7 +135,10 @@ class UserSettings(db.Model):
     @property
     def broker_ready(self) -> bool:
         """選択中ブローカーの接続情報が揃っているか。"""
-        if (self.broker or "oanda") == "capital":
+        broker = self.broker or "oanda"
+        if broker == "paper":
+            return True  # ペーパーは口座・鍵不要
+        if broker == "capital":
             return bool(self.capital_api_key_enc and self.capital_password_enc
                         and self.capital_identifier)
         return self.has_oanda_token

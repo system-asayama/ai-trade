@@ -68,7 +68,8 @@ def overview():
     context = {
         "settings": settings,
         "broker": broker,
-        "broker_env": (us.capital_env if broker == "capital" else us.oanda_env),
+        "broker_env": ("paper" if broker == "paper"
+                       else us.capital_env if broker == "capital" else us.oanda_env),
         "broker_ready": us.broker_ready,
         "summary": metrics.summary(closed),
         "by_instrument": metrics.group_stats(closed, "instrument"),
@@ -122,7 +123,7 @@ def settings_save():
     form = request.form
 
     # ブローカー選択
-    us.broker = form.get("broker") if form.get("broker") in ("oanda", "capital") else "oanda"
+    us.broker = form.get("broker") if form.get("broker") in ("oanda", "capital", "paper") else "oanda"
 
     # 秘密情報: 入力があった場合のみ更新（空欄なら既存を維持）
     token = (form.get("oanda_token") or "").strip()

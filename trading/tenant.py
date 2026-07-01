@@ -18,6 +18,8 @@ def settings_from_user(us: Any) -> Settings:
     """
     s = Settings()
     s.broker = getattr(us, "broker", "oanda") or "oanda"
+    # ペーパー建玉をユーザー単位でスコープ
+    s.paper_account = str(getattr(us, "user_id", "default"))
     s.oanda_api_token = us.get_oanda_token()
     s.oanda_account_id = us.oanda_account_id or ""
     env = (us.oanda_env or "practice").lower()
@@ -55,9 +57,9 @@ def build_user_engine(us: Any):
     from .store import TradeStore
 
     settings = settings_from_user(us)
-    client = make_broker_client(settings)
-    breaker = CircuitBreaker(settings)
     store = TradeStore()  # 単一DB。将来はユーザー別スコープ化を検討
+    client = make_broker_client(settings, store=store)
+    breaker = CircuitBreaker(settings)
 
     news_provider = None
     council = None
