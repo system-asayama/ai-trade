@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}長期データの取り込み{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>📥 長期データの取り込み（バックテスト用）</h1>
+  <p class="muted">
+    「今の15分足ロジックのまま数年ぶん」バックテストするには、長期の過去データが必要です。
+    ここから取り込めます（口座不要・無料）。取り込みは一度やればOKです。
+  </p>
+
+  {% if hist %}
+    <p>取り込み済み：
+      {% for inst, h in hist.items() %}
+        <span class="badge admin">{{ inst }}（{{ h.from }}〜{{ h.to }} / {{ h.count }}本）</span>
+      {% endfor %}
+    </p>
+  {% else %}
+    <p class="muted">まだ何も取り込まれていません。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h1>方法1：自動で取り込む（かんたん）</h1>
+  <p class="muted">通貨ペアと年を選んで実行します。うまくいかない場合は方法2をお使いください。
+  （1年ぶんで数十秒かかることがあります）</p>
+  <form method="post" action="{{ url_for('trading.hist_import_auto') }}">
+    <label>通貨ペア</label>
+    <select name="instrument">
+      {% for inst in settings.instruments %}
+        <option value="{{ inst }}">{{ inst }}</option>
+      {% endfor %}
+    </select>
+    <label>年（例: 2024）</label>
+    <input type="number" name="year" value="2024" min="2000" max="2100">
+    <button type="submit">自動で取り込む</button>
+  </form>
+</div>
+
+<div class="card">
+  <h1>方法2：ファイルをアップロード（確実）</h1>
+  <p class="muted">
+    <a class="link" href="https://www.histdata.com/download-free-forex-historical-data/" target="_blank" rel="noopener">HistData.com のダウンロードページ</a>
+    で「ASCII / 1 Minute Bar Quotes」を選び、通貨ペア・年の <strong>ZIP</strong> を保存してから、
+    ここでアップロードしてください。
+  </p>
+  <form method="post" action="{{ url_for('trading.hist_import_upload') }}" enctype="multipart/form-data">
+    <label>通貨ペア</label>
+    <select name="instrument">
+      {% for inst in settings.instruments %}
+        <option value="{{ inst }}">{{ inst }}</option>
+      {% endfor %}
+    </select>
+    <label>ファイル（.zip または .csv）</label>
+    <input type="file" name="file" accept=".zip,.csv">
+    <button type="submit">アップロードして取り込む</button>
+  </form>
+</div>
+
+<div class="card">
+  <a href="{{ url_for('trading.backtest_view') }}" class="link">← バックテストへ戻る</a>
+</div>
+
+{% endblock %}

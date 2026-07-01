@@ -24,9 +24,12 @@
     {% if hist %}
       <p class="muted">取り込み済み:
         {% for inst, h in hist.items() %}{{ inst }}（{{ h.from }}〜{{ h.to }}）{% if not loop.last %}, {% endif %}{% endfor %}
+        ｜ <a class="link" href="{{ url_for('trading.hist_import_view') }}">追加で取り込む</a>
       </p>
     {% else %}
-      <p class="muted">長期データは未取り込みです（サーバーで <code>scripts/import_histdata.py</code> を実行）。</p>
+      <p class="muted">長期データは未取り込みです。
+        <a class="link" href="{{ url_for('trading.hist_import_view') }}">こちらから取り込む（ブラウザでOK）</a>
+      </p>
     {% endif %}
     <div class="inline">
       <div style="flex:1;">

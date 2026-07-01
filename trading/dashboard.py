@@ -124,6 +124,61 @@ def _hist_coverage():
         return {}
 
 
+@trading_bp.route("/import", methods=["GET"])
+@_login_required
+def hist_import_view():
+    return render_template("trading_import.html", hist=_hist_coverage(),
+                          settings=Settings())
+
+
+@trading_bp.route("/import/auto", methods=["POST"])
+@_login_required
+def hist_import_auto():
+    from .histdata import HistStore, download_year, import_m1_bytes
+
+    instrument = (request.form.get("instrument") or "USD_JPY").strip()
+    try:
+        year = int(request.form.get("year") or 0)
+    except ValueError:
+        year = 0
+    if year < 2000 or year > 2100:
+        flash("正しい年を入力してください（例: 2024）。", "error")
+        return redirect(url_for("trading.hist_import_view"))
+    try:
+        data = download_year(instrument, year)
+        n = import_m1_bytes(HistStore(), instrument, data, is_zip=True)
+        if n == 0:
+            flash("データが取得できませんでした。手動ダウンロード→アップロードをお試しください。", "error")
+        else:
+            flash(f"{instrument} {year}年 を取り込みました（{n}本のM15）。", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"自動取り込みに失敗しました: {exc} … 手動アップロードをお試しください。", "error")
+    return redirect(url_for("trading.hist_import_view"))
+
+
+@trading_bp.route("/import/upload", methods=["POST"])
+@_login_required
+def hist_import_upload():
+    from .histdata import HistStore, import_m1_bytes
+
+    instrument = (request.form.get("instrument") or "USD_JPY").strip()
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        flash("ファイルを選んでください。", "error")
+        return redirect(url_for("trading.hist_import_view"))
+    try:
+        data = f.read()
+        is_zip = f.filename.lower().endswith(".zip")
+        n = import_m1_bytes(HistStore(), instrument, data, is_zip=is_zip)
+        if n == 0:
+            flash("ファイルからデータを読めませんでした（HistDataのM1形式か確認してください）。", "error")
+        else:
+            flash(f"{instrument}: {f.filename} を取り込みました（{n}本のM15）。", "success")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"取り込みに失敗しました: {exc}", "error")
+    return redirect(url_for("trading.hist_import_view"))
+
+
 @trading_bp.route("/backtest", methods=["GET"])
 @_login_required
 def backtest_view():
@@ -157,8 +212,8 @@ def backtest_run():
             candles = HistStore().load_candles(form["instrument"], "M15",
                                                limit=_LONG_MAX_BARS)
             if not candles:
-                error = ("この通貨ペアの長期データが未取り込みです。サーバーで "
-                         "scripts/import_histdata.py を実行して取り込んでください。")
+                error = ("この通貨ペアの長期データが未取り込みです。"
+                         "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
         else:
             from .market_data import YahooMarketData
             candles = YahooMarketData().get_candles(
