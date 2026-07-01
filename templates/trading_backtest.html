@@ -54,7 +54,9 @@
 {% if summary %}
 <div class="card">
   <h1>結果（{{ form.instrument }} / スプレッド {{ form.spread_pips }}pips）</h1>
-  {% if data_from %}<p class="muted">対象期間: {{ data_from }} 〜 {{ data_to }}</p>{% endif %}
+  {% if data_from %}<p class="muted">対象期間: {{ data_from }} 〜 {{ data_to }}
+    {% if source_used == 'hist' %}（取り込み済み長期データ）{% elif source_used == 'yahoo' %}（無料データ・中値）{% endif %}
+  </p>{% endif %}
   <table>
     <tr><th>取引数</th><td>{{ summary.num_trades }}</td>
         <th>勝率</th><td>{{ "%.1f"|format(summary.win_rate * 100) }}%</td></tr>

@@ -109,7 +109,7 @@ def _current_user_id():
 # バックテストの期間プリセット。長い期間ほど計算に時間がかかるため、
 # 短い期間を選べばタイムアウトを確実に避けられる（M15は約25000本/年）。
 _BT_PERIODS = {
-    "60d": {"label": "直近60日（無料データ・すぐ）", "source": "yahoo"},
+    "60d": {"label": "直近60日（すぐ）", "source": "yahoo", "bars": 4200},
     "3m": {"label": "長期3ヶ月（取り込み済み・約数秒）", "source": "hist", "bars": 6250},
     "6m": {"label": "長期6ヶ月（取り込み済み）", "source": "hist", "bars": 12500},
     "1y": {"label": "長期1年（取り込み済み・約10秒）", "source": "hist", "bars": 25000},
@@ -264,19 +264,31 @@ def backtest_run():
     error = result = summary = None
     equity = []
     data_from = data_to = None
+    source_used = None
     try:
-        if preset["source"] == "hist":
+        inst = form["instrument"]
+        # 取り込み済み長期データがあれば、短期(60日)も同じデータから切り出す。
+        # こうすると「短期は長期の一部分」という関係が必ず成り立ち、
+        # 短期に出た取引が長期に出ない、という食い違いが起きない。
+        has_hist = inst in _hist_coverage()
+        prefer_hist = preset["source"] == "hist" or has_hist
+        candles = []
+        if prefer_hist:
             from .histdata import HistStore
-            candles = HistStore().load_candles(form["instrument"], "M15",
-                                               limit=preset["bars"])
-            if not candles:
+            candles = HistStore().load_candles(
+                inst, "M15", limit=preset.get("bars", 4200))
+            if candles:
+                source_used = "hist"
+        if not candles:
+            if preset["source"] == "hist":
                 error = ("この通貨ペアの長期データが未取り込みです。"
                          "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
-        else:
-            from .market_data import YahooMarketData
-            candles = YahooMarketData().get_candles(
-                form["instrument"], settings.trigger_granularity,
-                count=5000, range_override="60d")
+            else:
+                from .market_data import YahooMarketData
+                candles = YahooMarketData().get_candles(
+                    inst, settings.trigger_granularity,
+                    count=5000, range_override="60d")
+                source_used = "yahoo"
 
         if error is None:
             df = candles_to_df(candles)
@@ -296,7 +308,7 @@ def backtest_run():
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
         periods=_BT_PERIODS, result=result, summary=summary, equity=equity, error=error,
-        data_from=data_from, data_to=data_to)
+        data_from=data_from, data_to=data_to, source_used=source_used)
 
 
 def _fnum(value, default):
