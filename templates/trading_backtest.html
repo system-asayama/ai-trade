@@ -16,6 +16,18 @@
         <option value="{{ inst }}" {{ 'selected' if form.instrument == inst else '' }}>{{ inst }}</option>
       {% endfor %}
     </select>
+    <label>期間</label>
+    <select name="period">
+      <option value="60d" {{ 'selected' if form.period != 'long' else '' }}>直近60日（15分足・無料データ）</option>
+      <option value="long" {{ 'selected' if form.period == 'long' else '' }}>長期（取り込み済みデータ・15分足）</option>
+    </select>
+    {% if hist %}
+      <p class="muted">取り込み済み:
+        {% for inst, h in hist.items() %}{{ inst }}（{{ h.from }}〜{{ h.to }}）{% if not loop.last %}, {% endif %}{% endfor %}
+      </p>
+    {% else %}
+      <p class="muted">長期データは未取り込みです（サーバーで <code>scripts/import_histdata.py</code> を実行）。</p>
+    {% endif %}
     <div class="inline">
       <div style="flex:1;">
         <label>想定スプレッド（pips）</label>
@@ -38,6 +50,7 @@
 {% if summary %}
 <div class="card">
   <h1>結果（{{ form.instrument }} / スプレッド {{ form.spread_pips }}pips）</h1>
+  {% if data_from %}<p class="muted">対象期間: {{ data_from }} 〜 {{ data_to }}</p>{% endif %}
   <table>
     <tr><th>取引数</th><td>{{ summary.num_trades }}</td>
         <th>勝率</th><td>{{ "%.1f"|format(summary.win_rate * 100) }}%</td></tr>

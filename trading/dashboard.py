@@ -104,13 +104,35 @@ def _current_user_id():
     return session.get("user_id")
 
 
+# 長期バックテストで一度に処理する M15 本数の上限（およそ2年ぶん）。
+# Webのタイムアウト内に収めるためのガード。
+_LONG_MAX_BARS = 200000
+
+
+def _hist_coverage():
+    """取り込み済みの長期データがある通貨ペアと期間を返す。"""
+    try:
+        from .histdata import HistStore
+        store = HistStore()
+        out = {}
+        for inst in store.instruments():
+            mn, mx, cnt = store.coverage(inst, "M15")
+            if cnt:
+                out[inst] = {"from": (mn or "")[:10], "to": (mx or "")[:10], "count": cnt}
+        return out
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 @trading_bp.route("/backtest", methods=["GET"])
 @_login_required
 def backtest_view():
     settings = Settings()
-    return render_template("trading_backtest.html", settings=settings, result=None,
-                          form={"instrument": settings.instruments[0],
-                                "spread_pips": 0.8, "slippage_pips": 0.2})
+    return render_template(
+        "trading_backtest.html", settings=settings, result=None,
+        hist=_hist_coverage(),
+        form={"instrument": settings.instruments[0], "period": "60d",
+              "spread_pips": 0.8, "slippage_pips": 0.2})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -118,36 +140,50 @@ def backtest_view():
 def backtest_run():
     from .backtester import Backtester
     from .data_feed import candles_to_df
-    from .market_data import YahooMarketData
 
     settings = Settings()
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
+        "period": request.form.get("period") if request.form.get("period") in ("60d", "long") else "60d",
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
     }
-    error = None
-    result = None
-    summary = None
+    error = result = summary = None
     equity = []
+    data_from = data_to = None
     try:
-        candles = YahooMarketData().get_candles(
-            form["instrument"], settings.trigger_granularity,
-            count=5000, range_override="60d")
-        df = candles_to_df(candles)
-        if len(df) < max(settings.ema_slow, 60):
-            error = "過去データが不足しています（別の通貨ペアを試すか、後で再実行してください）。"
+        if form["period"] == "long":
+            from .histdata import HistStore
+            candles = HistStore().load_candles(form["instrument"], "M15",
+                                               limit=_LONG_MAX_BARS)
+            if not candles:
+                error = ("この通貨ペアの長期データが未取り込みです。サーバーで "
+                         "scripts/import_histdata.py を実行して取り込んでください。")
         else:
-            bt = Backtester(settings, spread_pips=form["spread_pips"],
-                            slippage_pips=form["slippage_pips"])
-            result = bt.run(form["instrument"], df)
-            summary = result.summary()
-            equity = _equity_curve(result)
-    except Exception as exc:  # noqa: BLE001
-        error = f"データ取得に失敗しました: {exc}"
+            from .market_data import YahooMarketData
+            candles = YahooMarketData().get_candles(
+                form["instrument"], settings.trigger_granularity,
+                count=5000, range_override="60d")
 
-    return render_template("trading_backtest.html", settings=settings, form=form,
-                          result=result, summary=summary, equity=equity, error=error)
+        if error is None:
+            df = candles_to_df(candles)
+            if len(df) < max(settings.ema_slow, 60):
+                error = "過去データが不足しています（別の通貨ペア/期間をお試しください）。"
+            else:
+                data_from = df.index[0].strftime("%Y-%m-%d")
+                data_to = df.index[-1].strftime("%Y-%m-%d")
+                bt = Backtester(settings, spread_pips=form["spread_pips"],
+                                slippage_pips=form["slippage_pips"])
+                result = bt.run(form["instrument"], df)
+                summary = result.summary()
+                equity = _equity_curve(result)
+    except Exception as exc:  # noqa: BLE001
+        error = f"バックテストに失敗しました: {exc}"
+
+    return render_template(
+        "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
+        result=result, summary=summary, equity=equity, error=error,
+        data_from=data_from, data_to=data_to)
 
 
 def _fnum(value, default):
