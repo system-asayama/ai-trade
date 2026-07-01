@@ -1,0 +1,122 @@
+"""設定。環境変数（.env）から読み込む。
+
+pydantic-settings が無い環境でも動くよう、標準ライブラリへフォールバックする。
+本番(live)はデフォルトでは選ばれない（practice が既定）。
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from typing import List
+
+
+def _split_env(name: str, default: List[str]) -> List[str]:
+    raw = os.environ.get(name)
+    if not raw:
+        return list(default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# OANDA REST エンドポイント（v20）
+OANDA_HOSTS = {
+    "practice": "https://api-fxpractice.oanda.com",
+    "live": "https://api-fxtrade.oanda.com",
+}
+
+
+@dataclass
+class Settings:
+    """エンジン全体の設定。"""
+
+    # --- OANDA 接続 ---
+    oanda_api_token: str = field(default_factory=lambda: os.environ.get("OANDA_API_TOKEN", ""))
+    oanda_account_id: str = field(default_factory=lambda: os.environ.get("OANDA_ACCOUNT_ID", ""))
+    # 既定は practice（実弁を誤って触らないための安全装置）
+    oanda_env: str = field(default_factory=lambda: os.environ.get("OANDA_ENV", "practice"))
+
+    # --- 取引対象 ---
+    instruments: List[str] = field(
+        default_factory=lambda: _split_env("INSTRUMENTS", ["USD_JPY", "EUR_USD"])
+    )
+    # トリガー足（M15固定運用）と上位足
+    trigger_granularity: str = field(
+        default_factory=lambda: os.environ.get("TRIGGER_GRANULARITY", "M15")
+    )
+    htf_granularities: List[str] = field(
+        default_factory=lambda: _split_env("HTF_GRANULARITIES", ["H1", "H4", "D"])
+    )
+
+    # --- 指標パラメータ ---
+    atr_period: int = field(default_factory=lambda: _int_env("ATR_PERIOD", 14))
+    adx_period: int = field(default_factory=lambda: _int_env("ADX_PERIOD", 14))
+    ema_fast: int = field(default_factory=lambda: _int_env("EMA_FAST", 20))
+    ema_mid: int = field(default_factory=lambda: _int_env("EMA_MID", 50))
+    ema_slow: int = field(default_factory=lambda: _int_env("EMA_SLOW", 200))
+
+    # --- レジーム判定の閾値 ---
+    adx_trend_threshold: float = field(
+        default_factory=lambda: _float_env("ADX_TREND_THRESHOLD", 25.0)
+    )
+    adx_range_threshold: float = field(
+        default_factory=lambda: _float_env("ADX_RANGE_THRESHOLD", 20.0)
+    )
+
+    # --- エントリー条件 ---
+    breakout_lookback: int = field(default_factory=lambda: _int_env("BREAKOUT_LOOKBACK", 20))
+    atr_min_pct: float = field(default_factory=lambda: _float_env("ATR_MIN_PCT", 0.30))
+    volume_lookback: int = field(default_factory=lambda: _int_env("VOLUME_LOOKBACK", 20))
+
+    # --- リスク管理 ---
+    risk_per_trade: float = field(default_factory=lambda: _float_env("RISK_PER_TRADE", 0.5))  # %
+    atr_stop_mult: float = field(default_factory=lambda: _float_env("ATR_STOP_MULT", 1.5))
+    atr_trail_mult: float = field(default_factory=lambda: _float_env("ATR_TRAIL_MULT", 2.0))
+    max_open_positions: int = field(default_factory=lambda: _int_env("MAX_OPEN_POSITIONS", 2))
+
+    # --- Phase 5: ダマシ予測ML ---
+    fakeout_min_proba: float = field(
+        default_factory=lambda: _float_env("FAKEOUT_MIN_PROBA", 0.5)
+    )
+
+    # --- 経済指標カレンダー（危険度フィルタ） ---
+    econ_blackout_before_min: int = field(
+        default_factory=lambda: _int_env("ECON_BLACKOUT_BEFORE_MIN", 30)
+    )
+    econ_blackout_after_min: int = field(
+        default_factory=lambda: _int_env("ECON_BLACKOUT_AFTER_MIN", 15)
+    )
+    econ_importance_min: str = field(
+        default_factory=lambda: os.environ.get("ECON_IMPORTANCE_MIN", "high")
+    )
+
+    def __post_init__(self) -> None:
+        if self.oanda_env not in OANDA_HOSTS:
+            raise ValueError(
+                f"OANDA_ENV は {list(OANDA_HOSTS)} のいずれか。指定値: {self.oanda_env!r}"
+            )
+
+    @property
+    def is_live(self) -> bool:
+        return self.oanda_env == "live"
+
+    @property
+    def oanda_host(self) -> str:
+        return OANDA_HOSTS[self.oanda_env]
+
+
+def load_settings() -> Settings:
+    """環境変数から Settings を生成する。"""
+    return Settings()
