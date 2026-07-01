@@ -12,10 +12,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 
 from . import analysis, strategy
-from .analysis import MTFView, TREND_RANGE
+from .analysis import MTFView, TREND_DOWN, TREND_RANGE, TREND_UP
 from .config import Settings
 from .data_feed import resample_ohlcv
 from .strategy import SIGNAL_BUY, SIGNAL_SELL
@@ -132,6 +133,37 @@ class Backtester:
             aligned = None
         return MTFView(states=states, aligned=aligned)
 
+    def _precompute_htf(
+        self, htf_indicators: Dict[str, pd.DataFrame], tindex: pd.DatetimeIndex
+    ):
+        """各トリガー足時点の上位足トレンド状態を一括計算する（ベクトル化）。
+
+        毎バー searchsorted+iloc していた _htf_states_at をループ外で1回に。
+        戻り値: (gran別 状態配列 dict, 方向一致配列[UP/DOWN/None])。
+        """
+        n = len(tindex)
+        gran_states: Dict[str, np.ndarray] = {}
+        for gran, df in htf_indicators.items():
+            arr = np.full(n, TREND_RANGE, dtype=object)
+            if len(df):
+                states = df["trend_state"].to_numpy()
+                # 各トリガー時刻について「その時刻までに確定した最新の上位足」位置
+                pos = df.index.searchsorted(tindex, side="right") - 1
+                valid = pos >= 0
+                arr[valid] = states[pos[valid]]
+            gran_states[gran] = arr
+
+        grans = list(gran_states.keys())
+        if grans:
+            stacked = np.stack([gran_states[g] for g in grans], axis=1)
+            all_up = np.all(stacked == TREND_UP, axis=1)
+            all_down = np.all(stacked == TREND_DOWN, axis=1)
+        else:
+            all_up = np.zeros(n, dtype=bool)
+            all_down = np.zeros(n, dtype=bool)
+        aligned = np.where(all_up, TREND_UP, np.where(all_down, TREND_DOWN, None))
+        return gran_states, aligned
+
     def run(self, instrument: str, trigger_df: pd.DataFrame) -> BacktestResult:
         """トリガー足(生OHLCV)を与えてバックテストを実行する。
 
@@ -165,55 +197,69 @@ class Backtester:
         # スライスせず「直近 window 本」だけ渡す（O(n^2)→O(n) に高速化）。
         window = max(settings.breakout_lookback + 1, settings.volume_lookback + 1, 150)
 
+        # --- 高速化: 上位足の方向一致をループ外で一括計算 -------------------
+        # 上位足がそろわない限り strategy.evaluate は必ず NONE を返す。
+        # 一致は全体の数%しかないため、そろったバーだけ evaluate を呼ぶ。
+        tindex = trigger.index
+        gran_states, aligned_arr = self._precompute_htf(htf_indicators, tindex)
+
+        # 毎バーの iloc（pandas 行アクセス）を避けるため列を numpy 配列に展開
+        highs = trigger["high"].to_numpy(dtype=float)
+        lows = trigger["low"].to_numpy(dtype=float)
+        closes = trigger["close"].to_numpy(dtype=float)
+        atrs = (trigger["atr"].to_numpy(dtype=float)
+                if "atr" in trigger.columns else np.zeros(len(trigger)))
+
         for i in range(warmup, len(trigger)):
-            bar = trigger.iloc[i]
-            when = trigger.index[i]
+            when = tindex[i]
+            close_i = closes[i]
 
             # --- 既存ポジションの管理（当該バーで先に決済判定） ---
             if position is not None:
-                position = self._manage_position(position, bar, when, result)
+                position = self._manage_position(
+                    position, highs[i], lows[i], close_i, atrs[i], when, result)
 
-            # --- 反対シグナル/新規エントリーの評価 ---
+            diag["bars"] += 1
+
+            # --- 上位足がそろっていなければ評価不要（evaluate は NONE 確定） ---
+            aligned = aligned_arr[i]
+            if aligned is None:
+                continue
+            diag["mtf_aligned"] += 1
+
+            # そろったバーだけ直近 window 本をスライスして本評価
             slice_df = trigger.iloc[max(0, i - window + 1): i + 1]
-            mtf = self._htf_states_at(htf_indicators, when)
+            mtf = MTFView(states={g: gran_states[g][i] for g in gran_states},
+                          aligned=aligned)
             signal = strategy.evaluate(slice_df, mtf, settings)
 
-            # フィルタ段階の集計（signal.reason の内容から段階を判定）
-            diag["bars"] += 1
-            if mtf.is_aligned:
-                diag["mtf_aligned"] += 1
-                rsn = signal.reason
-                broke = rsn.get("breakout") == mtf.aligned
-                if broke:
-                    diag["breakout"] += 1
-                    if "volume" in rsn or signal.is_entry:
-                        # ATR段階は通過（volume段階で落ちた or 成立）
-                        diag["atr_pass"] += 1
-                    if signal.is_entry:
-                        diag["entries"] += 1
+            rsn = signal.reason
+            if rsn.get("breakout") == aligned:
+                diag["breakout"] += 1
+                if "volume" in rsn or signal.is_entry:
+                    diag["atr_pass"] += 1
+                if signal.is_entry:
+                    diag["entries"] += 1
 
             if position is not None:
                 # 反対シグナルが出たらクローズ
                 if signal.is_entry and signal.side != position.side:
-                    self._close(position, when, float(bar["close"]),
-                                "opposite_signal", result)
+                    self._close(position, when, close_i, "opposite_signal", result)
                     position = None
 
             if position is None and signal.is_entry:
-                position = self._open(instrument, signal, bar, when)
+                position = self._open(instrument, signal, atrs[i], when)
 
         # 最終バーで残ポジは終値クローズ
         if position is not None:
-            last_bar = trigger.iloc[-1]
-            self._close(position, trigger.index[-1], float(last_bar["close"]),
-                        "end_of_data", result)
+            self._close(position, tindex[-1], closes[-1], "end_of_data", result)
 
         result.diagnostics = diag
         return result
 
     # -- ポジション操作 ------------------------------------------------------
-    def _open(self, instrument: str, signal, bar, when) -> BacktestTrade:
-        atr_value = signal.atr or float(bar.get("atr", 0.0) or 0.0)
+    def _open(self, instrument: str, signal, bar_atr, when) -> BacktestTrade:
+        atr_value = signal.atr or float(bar_atr or 0.0)
         dist = self.settings.atr_stop_mult * atr_value
         cost = self._cost()
         # 約定はスプレッド/滑りの分だけ不利側に入る
@@ -232,24 +278,21 @@ class Backtester:
             initial_risk=abs(entry - stop),
         )
 
-    def _manage_position(self, pos: BacktestTrade, bar, when, result) -> Optional[BacktestTrade]:
+    def _manage_position(self, pos: BacktestTrade, high, low, close, atr_value,
+                         when, result) -> Optional[BacktestTrade]:
         """ストップ判定 → トレーリング更新。決済したら None を返す。"""
-        high = float(bar["high"])
-        low = float(bar["low"])
-        atr_value = float(bar.get("atr", 0.0) or 0.0)
-
         if pos.side == SIGNAL_BUY:
             if low <= pos.stop:  # ストップ約定
                 self._close(pos, when, pos.stop, "stop", result)
                 return None
             # トレーリング（建値方向にのみ引き上げ）
-            new_stop = bar["close"] - self.settings.atr_trail_mult * atr_value
+            new_stop = close - self.settings.atr_trail_mult * atr_value
             pos.stop = max(pos.stop, float(new_stop))
         else:  # SELL
             if high >= pos.stop:
                 self._close(pos, when, pos.stop, "stop", result)
                 return None
-            new_stop = bar["close"] + self.settings.atr_trail_mult * atr_value
+            new_stop = close + self.settings.atr_trail_mult * atr_value
             pos.stop = min(pos.stop, float(new_stop))
         return pos
 
