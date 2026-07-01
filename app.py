@@ -206,7 +206,14 @@ def _register_routes(app: Flask) -> None:
     @app.route("/dashboard")
     @login_required
     def dashboard():
-        return render_template("dashboard.html", user=current_user())
+        user = current_user()
+        # 一般ユーザーは空のダッシュボードを飛ばして「トレード」画面へ
+        if not user.is_admin:
+            try:
+                return redirect(url_for("trading.overview"))
+            except Exception:  # noqa: BLE001 トレード機能未登録時は従来画面へ
+                pass
+        return render_template("dashboard.html", user=user)
 
     # --- 管理者専用 ------------------------------------------------------
     @app.route("/admin/users")
