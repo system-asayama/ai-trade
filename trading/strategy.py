@@ -50,6 +50,27 @@ def _breakout(trigger_df: pd.DataFrame, lookback: int) -> Optional[str]:
     return None
 
 
+def _breakout_bar_quality(bar, direction: str):
+    """ブレイク足の (実体比, 終値の位置) を返す。
+
+    実体比 = |終値-始値| / (高値-安値)。1に近いほど力強い（ヒゲが少ない）。
+    終値の位置 = 抜けた方向の端に終値がどれだけ寄っているか（1で端、0で反対端）。
+    どちらも大きいほど「素直に伸びやすい強いブレイク」。
+    """
+    o = float(bar.get("open", 0.0) or 0.0)
+    h = float(bar.get("high", 0.0) or 0.0)
+    low = float(bar.get("low", 0.0) or 0.0)
+    c = float(bar.get("close", 0.0) or 0.0)
+    rng = h - low
+    if rng <= 0:
+        return 0.0, 0.5
+    body_frac = abs(c - o) / rng
+    close_pos = (c - low) / rng  # 上端に近いほど大
+    if direction == "down":
+        close_pos = 1.0 - close_pos  # 下抜けは下端に近いほど良い
+    return body_frac, close_pos
+
+
 def _volume_increasing(trigger_df: pd.DataFrame, lookback: int) -> bool:
     """直近バーの出来高(tick volume)が過去平均より大きいか。"""
     if "volume" not in trigger_df.columns or len(trigger_df) < lookback + 1:
@@ -88,6 +109,15 @@ def evaluate(
     if brk is None or brk != mtf.aligned:
         return Signal(SIGNAL_NONE, price, atr_value,
                       {"stage": "breakout", "breakout": brk, "mtf": mtf.aligned})
+
+    # 2b. ブレイク足の質（強いブレイクのみ）。実体が薄い/終値が端に無いブレイクは
+    #     「抜けた直後に逆行」しやすいダマシなので除外する（プライスアクション）。
+    if settings.breakout_body_min > 0:
+        body_frac, close_pos = _breakout_bar_quality(last, brk)
+        if body_frac < settings.breakout_body_min or close_pos < 0.6:
+            return Signal(SIGNAL_NONE, price, atr_value,
+                          {"stage": "weakbreak", "body_frac": round(body_frac, 2),
+                           "close_pos": round(close_pos, 2)})
 
     # 3. ボラ確認: ATR の相対水準（過去比の百分位）
     atr_pct = _atr_percentile(trigger_df)

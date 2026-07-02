@@ -99,6 +99,9 @@ class Settings:
     # 部分利確: +partial_tp_r R に到達したら partial_tp_frac 分を利確し残りは建値ストップ（0=無効）
     partial_tp_r: float = field(default_factory=lambda: _float_env("PARTIAL_TP_R", 0.0))
     partial_tp_frac: float = field(default_factory=lambda: _float_env("PARTIAL_TP_FRAC", 0.5))
+    # 強いブレイクのみ: ブレイク足の実体比がこの値以上 & 終値が抜け方向の端寄りのみ許可（0=無効）。
+    # 「抜けた直後に逆行」する弱い・ヒゲ主体のダマシ・ブレイクを除外するプライスアクション条件。
+    breakout_body_min: float = field(default_factory=lambda: _float_env("BREAKOUT_BODY_MIN", 0.0))
 
     # --- Phase 5: ダマシ予測ML ---
     fakeout_min_proba: float = field(

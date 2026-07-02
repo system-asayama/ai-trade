@@ -179,6 +179,28 @@ def test_partial_tp_changes_exit_and_bounds():
             assert t.r_multiple >= -1.0 - 1e-9
 
 
+def test_strong_breakout_filter_rejects_weak_bar():
+    from trading.analysis import MTFView, TREND_UP
+    settings = _settings()
+    settings.breakout_body_min = 0.5  # 強いブレイクのみ
+
+    # 直近20本は横ばい、最新足だけ高値を僅かに上抜けするが「ヒゲ主体で実体が薄い」足
+    idx = pd.date_range("2024-01-01", periods=25, freq="15min", tz="UTC")
+    close = np.full(25, 100.0)
+    df = pd.DataFrame({"open": close, "high": close + 0.1, "low": close - 0.1,
+                       "close": close, "volume": np.full(25, 100.0), "atr": np.full(25, 0.2)},
+                      index=idx)
+    # 最新足: 上抜けするが 実体小・上ヒゲ長（弱いブレイク）
+    df.iloc[-1, df.columns.get_loc("open")] = 100.15
+    df.iloc[-1, df.columns.get_loc("close")] = 100.16   # 実体 0.01
+    df.iloc[-1, df.columns.get_loc("high")] = 100.60    # 長い上ヒゲ
+    df.iloc[-1, df.columns.get_loc("low")] = 100.10
+    mtf = MTFView(states={"D": TREND_UP}, aligned=TREND_UP)
+    sig = strategy.evaluate(df, mtf, settings)
+    assert sig.side == strategy.SIGNAL_NONE
+    assert sig.reason.get("stage") == "weakbreak"
+
+
 def test_diagnose_flags_losing_low_payoff():
     from trading.backtester import diagnose
     # 負け越し・利小損大の成績を渡すと bad 診断が出る

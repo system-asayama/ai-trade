@@ -335,8 +335,8 @@ def backtest_view():
         per_pair=None,
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
-              "f_htf2": False, "f_trail": False, "f_adx": False,
-              "f_tp": False, "f_ml": False, "trail_mult": 3.0})
+              "f_htf2": False, "f_trail": False, "f_strong": False,
+              "f_adx": False, "f_tp": False, "f_ml": False, "trail_mult": 3.0})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -353,18 +353,19 @@ def backtest_run():
     # ロジック改良トグル
     f_htf2 = request.form.get("f_htf2") == "on"
     f_trail = request.form.get("f_trail") == "on"
+    f_strong = request.form.get("f_strong") == "on"
     f_adx = request.form.get("f_adx") == "on"
     f_tp = request.form.get("f_tp") == "on"
     f_ml = request.form.get("f_ml") == "on"
-    improved = f_htf2 or f_trail or f_adx or f_tp or f_ml
+    improved = f_htf2 or f_trail or f_strong or f_adx or f_tp or f_ml
     trail_mult = _fnum(request.form.get("trail_mult"), 3.0)
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
         "period": period_key,
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
-        "f_htf2": f_htf2, "f_trail": f_trail, "f_adx": f_adx,
-        "f_tp": f_tp, "f_ml": f_ml, "trail_mult": trail_mult,
+        "f_htf2": f_htf2, "f_trail": f_trail, "f_strong": f_strong,
+        "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml, "trail_mult": trail_mult,
     }
     error = result = summary = analytics = diagnosis = None
     equity = []
@@ -380,6 +381,8 @@ def backtest_run():
                 s.htf_granularities = ["H4", "D"]  # 上位足を2つに緩めエントリーを増やす
             if f_trail:
                 s.atr_trail_mult = trail_mult  # 利を伸ばす（早すぎる利食いを防ぐ）
+            if f_strong:
+                s.breakout_body_min = 0.4  # 強いブレイクのみ（弱い/ヒゲ主体を除外）
             if f_adx:
                 s.entry_adx_min = 22.0
             if f_tp:

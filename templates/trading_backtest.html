@@ -69,6 +69,10 @@
         <span class="muted">（大きいほど利を伸ばす＝ペイオフ↑・勝率↓）</span>
       </label><br>
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_strong" {{ 'checked' if form.f_strong else '' }}>
+        強いブレイクのみ（実体が薄い/ヒゲ主体の弱いブレイクを除外＝抜けた直後の逆行を減らす）
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_adx" {{ 'checked' if form.f_adx else '' }}>
         レンジ回避（勢いADXが弱い相場ではエントリーしない）
       </label><br>
@@ -225,6 +229,7 @@
     <tr><th>① 評価したバー数</th><td>{{ d.bars }}</td></tr>
     <tr><th>② 上位足の方向が一致</th><td>{{ d.mtf_aligned }} 本</td></tr>
     <tr><th>③ さらにその向きへブレイク</th><td>{{ d.breakout }} 本</td></tr>
+    {% if d.weak_filtered %}<tr><th>　→ 弱いブレイクで見送り</th><td>−{{ d.weak_filtered }} 本</td></tr>{% endif %}
     <tr><th>④ さらに勢い(ATR)条件も通過</th><td>{{ d.atr_pass }} 本</td></tr>
     {% if d.range_filtered %}<tr><th>　→ レンジ回避で見送り</th><td>−{{ d.range_filtered }} 本</td></tr>{% endif %}
     {% if d.ml_filtered %}<tr><th>　→ ダマシAIで見送り</th><td>−{{ d.ml_filtered }} 本</td></tr>{% endif %}
