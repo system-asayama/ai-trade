@@ -194,6 +194,24 @@ def test_is_confirmed_range_box_vs_trend():
     assert _is_confirmed_range(trend, min_touches=2) is False
 
 
+def test_fixed_tp_rr_profile():
+    from trading.synthetic import make_ohlcv
+    settings = _settings()
+    settings.tp_rr = 1.0  # 1:1 固定利確
+    df = make_ohlcv(6000)
+    r = Backtester(settings).run("USD_JPY", df)
+    assert r.num_trades >= 1
+    # 決済理由は take_profit / stop のみ（トレーリングしない）
+    reasons = {t.exit_reason for t in r.closed}
+    assert reasons <= {"take_profit", "stop", "opposite_signal", "end_of_data"}
+    # 勝ちトレードは概ね +1R 近辺（コスト分だけ小さい）、-1R を大きく超える負けは無い
+    for t in r.closed:
+        if t.exit_reason == "take_profit":
+            assert 0.7 <= t.r_multiple <= 1.05
+        if t.exit_reason == "stop":
+            assert t.r_multiple <= 0.0
+
+
 def test_entry_stop_range_vs_atr():
     settings = _settings()
     settings.atr_stop_mult = 1.5

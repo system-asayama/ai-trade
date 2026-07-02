@@ -99,6 +99,10 @@ class Settings:
     # 部分利確: +partial_tp_r R に到達したら partial_tp_frac 分を利確し残りは建値ストップ（0=無効）
     partial_tp_r: float = field(default_factory=lambda: _float_env("PARTIAL_TP_R", 0.0))
     partial_tp_frac: float = field(default_factory=lambda: _float_env("PARTIAL_TP_FRAC", 0.5))
+    # 固定利確（リスクリワード固定）: tp_rr>0 のとき、トレーリングせず
+    # 「利確= 初期リスク×tp_rr」「損切り= 初期リスク」で全決済する。
+    # tp_rr=1.0 なら 1:1（当たれば+1R・外れれば-1R）。勝率が成績を決める古典的スタイル。
+    tp_rr: float = field(default_factory=lambda: _float_env("TP_RR", 0.0))
     # 強いブレイクのみ: ブレイク足の実体比がこの値以上 & 終値が抜け方向の端寄りのみ許可（0=無効）。
     # 「抜けた直後に逆行」する弱い・ヒゲ主体のダマシ・ブレイクを除外するプライスアクション条件。
     breakout_body_min: float = field(default_factory=lambda: _float_env("BREAKOUT_BODY_MIN", 0.0))

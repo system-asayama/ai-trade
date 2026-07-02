@@ -103,6 +103,11 @@
         レンジ回避（勢いADXが弱い相場ではエントリーしない）
       </label><br>
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_fixtp" {{ 'checked' if form.f_fixtp else '' }}>
+        <strong>固定利確 1:1</strong>（トレーリングをやめ、損切りと同じ幅で利確＝勝率型。
+        当たれば+1R・外れれば−1R。「利を伸ばす」とは併用不可、こちらが優先）
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_tp" {{ 'checked' if form.f_tp else '' }}>
         部分利確（+1Rで半分利確し、残りは建値ストップ）
       </label><br>

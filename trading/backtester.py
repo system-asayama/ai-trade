@@ -458,6 +458,27 @@ class Backtester:
     def _manage_position(self, pos: BacktestTrade, high, low, close, atr_value,
                          when, result) -> Optional[BacktestTrade]:
         """ストップ判定 → 部分利確 → トレーリング更新。決済したら None を返す。"""
+        s = self.settings
+        # --- 固定利確モード（トレーリングせず 1:tp_rr で決済） ---
+        if s.tp_rr > 0 and pos.initial_risk > 0:
+            if pos.side == SIGNAL_BUY:
+                if low <= pos.stop:  # 損切り優先（保守的）
+                    self._close(pos, when, pos.stop, "stop", result)
+                    return None
+                target = pos.entry_price + s.tp_rr * pos.initial_risk
+                if high >= target:
+                    self._close(pos, when, target, "take_profit", result)
+                    return None
+            else:  # SELL
+                if high >= pos.stop:
+                    self._close(pos, when, pos.stop, "stop", result)
+                    return None
+                target = pos.entry_price - s.tp_rr * pos.initial_risk
+                if low <= target:
+                    self._close(pos, when, target, "take_profit", result)
+                    return None
+            return pos
+
         if pos.side == SIGNAL_BUY:
             if low <= pos.stop:  # ストップ約定（保守的に先に判定）
                 # 建値以上に引き上がったストップで出た＝利益方向の手仕舞い(trail)、
