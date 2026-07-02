@@ -73,6 +73,43 @@
   この期間・条件では有利だったことを示します（将来を保証しません）。</p>
 </div>
 
+{% if analytics %}
+<div class="card">
+  <h1>📊 成績の内訳（なぜこの結果か）</h1>
+  <table>
+    <tr><th>勝ち平均</th><td>{{ "%.2f"|format(analytics.avg_win_r) }}R（{{ analytics.num_wins }}回）</td>
+        <th>負け平均</th><td>{{ "%.2f"|format(analytics.avg_loss_r) }}R（{{ analytics.num_losses }}回）</td></tr>
+    <tr><th>ペイオフ比<br><span class="muted">勝ち平均÷負け平均</span></th><td>{{ "%.2f"|format(analytics.payoff) }}</td>
+        <th>プロフィットファクター<br><span class="muted">総利益÷総損失</span></th><td>{{ "%.2f"|format(analytics.profit_factor) }}</td></tr>
+    <tr><th>最大の勝ち</th><td>{{ "%.2f"|format(analytics.largest_win_r) }}R</td>
+        <th>最大の負け</th><td>{{ "%.2f"|format(analytics.largest_loss_r) }}R</td></tr>
+  </table>
+  <p class="muted">トレンド追随型は「勝率は低め・少数の大勝ちで稼ぐ」形が健全です。
+    プロフィットファクターが1.0超なら期間全体では利益、ペイオフ比が高いほど利大損小です。</p>
+
+  <h1 style="margin-top:18px;">年別の損益（R）</h1>
+  <table>
+    <tr><th>年</th><th>取引数</th><th>合計R</th></tr>
+    {% for yr, v in analytics.by_year.items() %}
+    <tr><td>{{ yr }}</td><td>{{ v.count }}</td>
+        <td style="color:{{ '#2b8a3e' if v.total_r >= 0 else '#c92a2a' }};">{{ "%+.2f"|format(v.total_r) }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">👉 特定の年だけで稼いでいる場合、その相場（強いトレンド）に依存しています。
+    多くの年がマイナスなら、そのままでは今後も苦しい可能性があります。</p>
+
+  <h1 style="margin-top:18px;">決済理由の内訳</h1>
+  <table>
+    <tr><th>理由</th><th>回数</th><th>合計R</th></tr>
+    {% for rs, v in analytics.by_reason.items() %}
+    <tr><td>{{ rs }}</td><td>{{ v.count }}</td>
+        <td style="color:{{ '#2b8a3e' if v.total_r >= 0 else '#c92a2a' }};">{{ "%+.2f"|format(v.total_r) }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">stop=ストップ/トレーリングで決済、opposite_signal=逆シグナルで決済、end_of_data=期間終了。</p>
+</div>
+{% endif %}
+
 {% if result and result.diagnostics %}
 {% set d = result.diagnostics %}
 <div class="card">
@@ -87,7 +124,8 @@
     <tr><th>② 上位足の方向が一致</th><td>{{ d.mtf_aligned }} 本</td></tr>
     <tr><th>③ さらにその向きへブレイク</th><td>{{ d.breakout }} 本</td></tr>
     <tr><th>④ さらに勢い(ATR)条件も通過</th><td>{{ d.atr_pass }} 本</td></tr>
-    <tr><th>⑤ さらに出来高も通過＝エントリー</th><td><strong>{{ d.entries }} 本</strong></td></tr>
+    <tr><th>⑤ さらに出来高も通過＝エントリー条件成立の信号</th><td>{{ d.entries }} 本</td></tr>
+    <tr><th>⑥ 実際に成立した取引<br><span class="muted">既にポジション保有中の信号は除外</span></th><td><strong>{{ summary.num_trades }} 件</strong></td></tr>
   </table>
   {% if summary.num_trades == 0 %}
     <p class="muted">

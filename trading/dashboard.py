@@ -267,7 +267,7 @@ def backtest_run():
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
     }
-    error = result = summary = None
+    error = result = summary = analytics = None
     equity = []
     data_from = data_to = None
     source_used = None
@@ -312,13 +312,15 @@ def backtest_run():
                                 slippage_pips=form["slippage_pips"])
                 result = bt.run(form["instrument"], df, count_from=count_from)
                 summary = result.summary()
+                analytics = result.analytics()
                 equity = _equity_curve(result)
     except Exception as exc:  # noqa: BLE001
         error = f"バックテストに失敗しました: {exc}"
 
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
-        periods=_BT_PERIODS, result=result, summary=summary, equity=equity, error=error,
+        periods=_BT_PERIODS, result=result, summary=summary, analytics=analytics,
+        equity=equity, error=error,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 

@@ -93,6 +93,51 @@ class BacktestResult:
             "max_drawdown_r": round(self.max_drawdown_r, 4),
         }
 
+    def analytics(self) -> Dict[str, object]:
+        """成績の内訳（勝ち負けの偏り・年別・決済理由別）を返す。
+
+        「なぜこの成績なのか」を数字で示すための分析。トレンド追随系では
+        少数の大勝ちが多数の小負けを支える形になりやすく、payoff（勝ち平均÷
+        負け平均）と profit_factor（総利益÷総損失）で健全性が見える。
+        """
+        closed = self.closed
+        wins = [t.r_multiple for t in closed if t.r_multiple > 0]
+        losses = [t.r_multiple for t in closed if t.r_multiple <= 0]
+        gross_win = sum(wins)
+        gross_loss = -sum(losses)  # 正の値
+        avg_win = gross_win / len(wins) if wins else 0.0
+        avg_loss = gross_loss / len(losses) if losses else 0.0
+
+        # 決済理由別
+        by_reason: Dict[str, Dict[str, float]] = {}
+        for t in closed:
+            r = by_reason.setdefault(t.exit_reason or "?", {"count": 0, "total_r": 0.0})
+            r["count"] += 1
+            r["total_r"] += t.r_multiple
+
+        # 年別（どの時期に稼ぎ/損したか＝レジーム依存の可視化）
+        by_year: Dict[str, Dict[str, float]] = {}
+        for t in closed:
+            yr = str(t.entry_time.year) if t.entry_time is not None else "?"
+            y = by_year.setdefault(yr, {"count": 0, "total_r": 0.0})
+            y["count"] += 1
+            y["total_r"] += t.r_multiple
+
+        return {
+            "avg_win_r": round(avg_win, 3),
+            "avg_loss_r": round(-avg_loss, 3),  # 表示は負の値で
+            "payoff": round(avg_win / avg_loss, 2) if avg_loss > 0 else 0.0,
+            "profit_factor": round(gross_win / gross_loss, 2) if gross_loss > 0 else 0.0,
+            "largest_win_r": round(max(wins), 2) if wins else 0.0,
+            "largest_loss_r": round(min(losses), 2) if losses else 0.0,
+            "num_wins": len(wins),
+            "num_losses": len(losses),
+            "by_reason": {k: {"count": int(v["count"]), "total_r": round(v["total_r"], 2)}
+                          for k, v in by_reason.items()},
+            "by_year": {k: {"count": int(v["count"]), "total_r": round(v["total_r"], 2)}
+                        for k, v in sorted(by_year.items())},
+        }
+
 
 class Backtester:
     """単一インストルメント・単一ポジションのバックテスター。"""
