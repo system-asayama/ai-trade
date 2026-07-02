@@ -69,6 +69,11 @@
         <span class="muted">（大きいほど利を伸ばす＝ペイオフ↑・勝率↓）</span>
       </label><br>
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_retest" {{ 'checked' if form.f_retest else '' }}>
+        <strong>リテスト入場（おすすめ）</strong>：ブレイクを追いかけず、抜けた水準への押し戻りを待って入る。
+        ダマシは押し戻りが成立しないので構造的に除外され、約定も水準近くで有利。
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_strong" {{ 'checked' if form.f_strong else '' }}>
         強いブレイクのみ（実体が薄い/ヒゲ主体の弱いブレイクを除外＝抜けた直後の逆行を減らす）
       </label><br>

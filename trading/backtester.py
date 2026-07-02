@@ -257,6 +257,8 @@ class Backtester:
         # 指標が安定するまでのウォームアップ
         warmup = max(settings.ema_slow, settings.breakout_lookback + 1)
         position: Optional[BacktestTrade] = None
+        # リテスト入場の保留注文: (side, level, atr, 残りバー数) or None
+        pending = None
 
         # 「なぜエントリーしなかったか」を段階別に集計する
         diag = {
@@ -307,6 +309,27 @@ class Backtester:
                 position = self._manage_position(
                     position, highs[i], lows[i], close_i, atrs[i], when, result)
 
+            # --- リテスト待ち（保留注文）の処理：毎バー・ポジション無しのとき ---
+            # 抜けた水準まで押し戻り、そこを保って引ければ入場（＝ダマシは成立しない）。
+            if position is None and pending is not None:
+                pside, plevel, patr, pleft = pending
+                pending = None  # このバーで確定 or 消化。残れば下で作り直す
+                if pside == SIGNAL_BUY and lows[i] <= plevel:
+                    if close_i >= plevel:  # 水準を保って引けた＝リテスト成立
+                        position = self._make_trade(
+                            instrument, SIGNAL_BUY, close_i,
+                            plevel - settings.atr_stop_mult * patr, when, {"stage": "retest"})
+                    # 割って引けた＝ダマシ → 何もしない（見送り）
+                elif pside == SIGNAL_SELL and highs[i] >= plevel:
+                    if close_i <= plevel:
+                        position = self._make_trade(
+                            instrument, SIGNAL_SELL, close_i,
+                            plevel + settings.atr_stop_mult * patr, when, {"stage": "retest"})
+                else:
+                    pleft -= 1  # まだ水準に触れていない → 期限まで待つ
+                    if pleft > 0:
+                        pending = (pside, plevel, patr, pleft)
+
             if counting:
                 diag["bars"] += 1
 
@@ -345,7 +368,17 @@ class Backtester:
                     position = None
 
             if position is None and signal.is_entry:
-                position = self._open(instrument, signal, atrs[i], when)
+                if settings.retest_entry:
+                    # 追いかけず、抜けた水準への押し戻りを待つ保留にする
+                    lb = settings.breakout_lookback
+                    lo = max(0, i - lb)
+                    if signal.side == SIGNAL_BUY:
+                        level = float(highs[lo:i].max()) if i > lo else close_i
+                    else:
+                        level = float(lows[lo:i].min()) if i > lo else close_i
+                    pending = (signal.side, level, atrs[i], settings.retest_max_bars)
+                else:
+                    position = self._open(instrument, signal, atrs[i], when)
 
         # 最終バーで残ポジは終値クローズ
         if position is not None:
@@ -359,26 +392,26 @@ class Backtester:
         return result
 
     # -- ポジション操作 ------------------------------------------------------
-    def _open(self, instrument: str, signal, bar_atr, when) -> BacktestTrade:
-        atr_value = signal.atr or float(bar_atr or 0.0)
-        dist = self.settings.atr_stop_mult * atr_value
+    def _make_trade(self, instrument, side, ref_price, stop, when, reason) -> BacktestTrade:
+        """約定価格にコスト（スプレッド/滑り）を乗せてトレードを生成する。"""
         cost = self._cost()
-        # 約定はスプレッド/滑りの分だけ不利側に入る
-        if signal.side == SIGNAL_BUY:
-            entry = signal.price + cost   # 買いは高く約定
-            stop = signal.price - dist
-        else:
-            entry = signal.price - cost   # 売りは安く約定
-            stop = signal.price + dist
+        entry = ref_price + cost if side == SIGNAL_BUY else ref_price - cost
         return BacktestTrade(
             instrument=instrument,
-            side=signal.side,
+            side=side,
             entry_time=when,
             entry_price=entry,
             stop=stop,
             initial_risk=abs(entry - stop),
-            entry_reason=dict(signal.reason) if signal.reason else {},
+            entry_reason=dict(reason) if reason else {},
         )
+
+    def _open(self, instrument: str, signal, bar_atr, when) -> BacktestTrade:
+        atr_value = signal.atr or float(bar_atr or 0.0)
+        dist = self.settings.atr_stop_mult * atr_value
+        stop = signal.price - dist if signal.side == SIGNAL_BUY else signal.price + dist
+        return self._make_trade(instrument, signal.side, signal.price, stop, when,
+                                signal.reason)
 
     def _try_partial_tp(self, pos: BacktestTrade, high, low) -> None:
         """+partial_tp_r R に到達したら一部利確し、残りは建値ストップにする。"""

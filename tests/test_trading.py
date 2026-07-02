@@ -179,6 +179,19 @@ def test_partial_tp_changes_exit_and_bounds():
             assert t.r_multiple >= -1.0 - 1e-9
 
 
+def test_retest_entry_mode_tags_and_runs():
+    from trading.synthetic import make_ohlcv
+    settings = _settings()
+    settings.retest_entry = True
+    df = make_ohlcv(8000)
+    r = Backtester(settings).run("USD_JPY", df)
+    assert r.num_trades >= 1
+    # リテストモードでは全エントリーが押し戻し経由（stage=retest）
+    assert all(t.entry_reason.get("stage") == "retest" for t in r.closed)
+    # 初期リスク（建値〜初期ストップ幅）が正しく設定されている
+    assert all(t.initial_risk > 0 for t in r.closed)
+
+
 def test_strong_breakout_filter_rejects_weak_bar():
     from trading.analysis import MTFView, TREND_UP
     settings = _settings()

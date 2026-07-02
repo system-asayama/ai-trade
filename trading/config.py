@@ -102,6 +102,12 @@ class Settings:
     # 強いブレイクのみ: ブレイク足の実体比がこの値以上 & 終値が抜け方向の端寄りのみ許可（0=無効）。
     # 「抜けた直後に逆行」する弱い・ヒゲ主体のダマシ・ブレイクを除外するプライスアクション条件。
     breakout_body_min: float = field(default_factory=lambda: _float_env("BREAKOUT_BODY_MIN", 0.0))
+    # リテスト入場: ブレイク足の終値で追いかけず、抜けた水準まで押し戻り（retest）を待ち、
+    # そこで支持/抵抗が反転（水準を保って引ける）したら入る。ダマシは retest が成立しないので
+    # 構造的に除外され、約定価格も水準近く＝有利。retest_max_bars 本以内に来なければ見送り。
+    retest_entry: bool = field(
+        default_factory=lambda: os.environ.get("RETEST_ENTRY", "0") in ("1", "true", "True"))
+    retest_max_bars: int = field(default_factory=lambda: _int_env("RETEST_MAX_BARS", 8))
 
     # --- Phase 5: ダマシ予測ML ---
     fakeout_min_proba: float = field(
