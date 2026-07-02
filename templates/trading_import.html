@@ -2,6 +2,11 @@
 {% block title %}長期データの取り込み{% endblock %}
 {% block content %}
 
+{% if status and status.state == 'running' %}
+  <!-- 取り込み中は自動で更新して進捗を表示 -->
+  <meta http-equiv="refresh" content="10">
+{% endif %}
+
 <div class="card">
   <h1>📥 長期データの取り込み（バックテスト用）</h1>
   <p class="muted">
@@ -13,7 +18,7 @@
     <div class="flash {{ 'error' if status.state == 'error' else 'success' }}">
       {% if status.state == 'running' %}⏳{% elif status.state == 'done' %}✅{% else %}⚠️{% endif %}
       {{ status.message }}
-      {% if status.state == 'running' %}（この画面を再読み込みすると更新されます）{% endif %}
+      {% if status.state == 'running' %}（10秒ごとに自動更新されます）{% endif %}
     </div>
   {% endif %}
 
@@ -28,8 +33,22 @@
   {% endif %}
 </div>
 
+<div class="card" style="border:2px solid #3b5bdb;">
+  <h1>⭐ おすすめ：全ペア・過去5年を一括取得</h1>
+  <p class="muted">
+    主要{{ instruments|length }}ペア（{{ instruments|join(', ') }}）の<strong>過去5年ぶん</strong>を、
+    ボタン1つでまとめて取り込みます。裏側で順番に処理するので<strong>タイムアウトしません</strong>。
+    数分〜十数分かかります。取り込み済みの年は自動でスキップするので、途中で止まっても押し直せば続きから進みます。
+  </p>
+  <form method="post" action="{{ url_for('trading.hist_import_all') }}">
+    <button type="submit" {{ 'disabled' if status and status.state == 'running' else '' }}>
+      {% if status and status.state == 'running' %}取り込み中…{% else %}全ペア・過去5年を一括取得する{% endif %}
+    </button>
+  </form>
+</div>
+
 <div class="card">
-  <h1>方法1：自動で取り込む（かんたん）</h1>
+  <h1>方法1：自動で取り込む（かんたん・1ペアずつ）</h1>
   <p class="muted">通貨ペアと年を選んで実行します。うまくいかない場合は方法2をお使いください。
   （1年ぶんで数十秒かかることがあります）</p>
   <form method="post" action="{{ url_for('trading.hist_import_auto') }}">

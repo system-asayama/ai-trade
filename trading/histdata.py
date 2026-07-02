@@ -142,6 +142,15 @@ class HistStore:
             "SELECT DISTINCT instrument FROM hist_candles").fetchall()
         return [r["instrument"] for r in rows]
 
+    def year_count(self, instrument: str, year: int,
+                   granularity: str = "M15") -> int:
+        """指定の年に保存済みの本数（一括取り込みで既存年をスキップするため）。"""
+        row = self._conn.execute(
+            "SELECT COUNT(*) c FROM hist_candles "
+            "WHERE instrument=? AND granularity=? AND substr(time,1,4)=?",
+            (instrument, granularity, str(year))).fetchone()
+        return int(row["c"] or 0)
+
 
 # --- 取り込み ---------------------------------------------------------------
 def import_m1_bytes(store: HistStore, instrument: str, data: bytes,

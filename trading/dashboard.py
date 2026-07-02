@@ -204,6 +204,84 @@ def _run_import(instrument: str, year: int) -> None:
         _write_status("error", f"取り込み失敗: {exc}")
 
 
+def _import_one_year(store, instrument, year) -> int:
+    """1ペア・1年を取り込み、保存本数を返す（年一括→不可なら月別）。"""
+    from .histdata import download_month, download_year, import_m1_bytes
+    n = 0
+    try:
+        n = import_m1_bytes(store, instrument, download_year(instrument, year), is_zip=True)
+    except Exception:  # noqa: BLE001
+        n = 0
+    if n == 0:  # 年一括が無い（進行中の年など）→ 月別フォールバック
+        for month in range(1, 13):
+            try:
+                n += import_m1_bytes(store, instrument,
+                                     download_month(instrument, year, month), is_zip=True)
+            except Exception:  # noqa: BLE001
+                continue
+    return n
+
+
+def _run_import_all(instruments, years, current_year) -> None:
+    """全ペア×指定年をバックグラウンドで一括取り込み（進捗を逐次書き込む）。
+
+    既に十分な本数が入っている過去年はスキップして再ダウンロードを避ける。
+    1件ずつ try するので、一部が失敗しても全体は止まらない。
+    """
+    from .histdata import HistStore
+    store = HistStore()
+    total = len(instruments) * len(years)
+    step = ok = skipped = failed = 0
+    bars = 0
+    try:
+        for inst in instruments:
+            for yr in years:
+                step += 1
+                # 過去年で既に揃っていればスキップ（今年は増え続けるので毎回更新）
+                if yr < current_year and store.year_count(inst, yr) > 20000:
+                    skipped += 1
+                    continue
+                _write_status(
+                    "running",
+                    f"取り込み中… {inst} {yr}年（{step}/{total}）"
+                    f"｜成功{ok}・スキップ{skipped}・失敗{failed}")
+                n = _import_one_year(store, inst, yr)
+                if n > 0:
+                    ok += 1
+                    bars += n
+                else:
+                    failed += 1
+        _write_status(
+            "done",
+            f"一括取り込み完了：取得{ok}件・スキップ{skipped}件・失敗{failed}件"
+            f"（{bars:,}本のM15を保存）。失敗分は方法1/2で個別に取り込めます。")
+    except Exception as exc:  # noqa: BLE001
+        _write_status("error", f"一括取り込みで問題が発生: {exc}")
+
+
+@trading_bp.route("/import/all", methods=["POST"])
+@_login_required
+def hist_import_all():
+    """全通貨ペア・過去5年ぶんを一括取り込み（バックグラウンド・タイムアウトなし）。"""
+    import datetime
+
+    status = _read_status()
+    if status and status.get("state") == "running":
+        flash("すでに取り込み中です。完了までお待ちください（この画面で進捗が更新されます）。",
+              "error")
+        return redirect(url_for("trading.hist_import_view"))
+
+    year_now = datetime.datetime.now(datetime.timezone.utc).year
+    years = list(range(year_now - 5, year_now + 1))  # 過去5年＋今年
+    _write_status("running", "一括取り込みを開始します…")
+    threading.Thread(target=_run_import_all,
+                     args=(list(_BT_INSTRUMENTS), years, year_now),
+                     daemon=True).start()
+    flash(f"全{len(_BT_INSTRUMENTS)}ペア・{years[0]}〜{years[-1]}年の取り込みを開始しました。"
+          "数分〜十数分かかります。この画面で進捗を確認できます（自動更新）。", "success")
+    return redirect(url_for("trading.hist_import_view"))
+
+
 @trading_bp.route("/import/auto", methods=["POST"])
 @_login_required
 def hist_import_auto():

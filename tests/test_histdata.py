@@ -94,6 +94,15 @@ def test_store_limit_returns_latest():
     assert len(latest) == 10
 
 
+def test_year_count():
+    store = HistStore(":memory:")
+    m15 = to_m15(_m1_df(3000))  # 2024-01-01 起点
+    store.import_df("USD_JPY", "M15", m15)
+    assert store.year_count("USD_JPY", 2024) == len(m15)  # 全て2024年
+    assert store.year_count("USD_JPY", 2023) == 0         # 別年は0
+    assert store.year_count("EUR_USD", 2024) == 0         # 別ペアは0
+
+
 def test_import_m1_bytes_csv():
     store = HistStore(":memory:")
     text = "\n".join(
