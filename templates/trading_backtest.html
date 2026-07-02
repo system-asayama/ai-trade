@@ -50,6 +50,10 @@
     <label>ロジック改良（ONにすると「改良前→改良後」を並べて比較します）</label>
     <div style="margin:4px 0 10px; line-height:1.9;">
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_trail" {{ 'checked' if form.f_trail else '' }}>
+        利を伸ばす（トレーリングを緩める：2.0→3.0 ATR。早すぎる利食いを防ぐ）
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_adx" {{ 'checked' if form.f_adx else '' }}>
         レンジ回避（勢いADXが弱い相場ではエントリーしない）
       </label><br>
@@ -110,6 +114,19 @@
   <p class="muted">R は「1回の想定リスク」を1とした単位です。合計Rがプラスなら、
   この期間・条件では有利だったことを示します（将来を保証しません）。</p>
 </div>
+
+{% if diagnosis %}
+<div class="card">
+  <h1>🩺 自動診断（なぜこの結果か）</h1>
+  {% for d in diagnosis %}
+    <div class="flash {{ 'error' if d.level == 'bad' else ('success' if d.level == 'good' else '') }}"
+         style="{% if d.level == 'warn' %}background:#fff3bf;color:#663c00;{% elif d.level == 'info' %}background:#e7f5ff;color:#0b4a6f;{% endif %}margin-bottom:8px;">
+      {% if d.level == 'bad' %}❌{% elif d.level == 'good' %}✅{% elif d.level == 'warn' %}⚠️{% else %}💡{% endif %}
+      {{ d.text }}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if analytics %}
 <div class="card">

@@ -406,7 +406,10 @@ class Backtester:
         """ストップ判定 → 部分利確 → トレーリング更新。決済したら None を返す。"""
         if pos.side == SIGNAL_BUY:
             if low <= pos.stop:  # ストップ約定（保守的に先に判定）
-                self._close(pos, when, pos.stop, "stop", result)
+                # 建値以上に引き上がったストップで出た＝利益方向の手仕舞い(trail)、
+                # 建値未満＝本来の損切り(stop) として区別する（分析用）。
+                reason = "trail" if pos.stop > pos.entry_price else "stop"
+                self._close(pos, when, pos.stop, reason, result)
                 return None
             self._try_partial_tp(pos, high, low)
             # トレーリング（建値方向にのみ引き上げ）
@@ -414,7 +417,8 @@ class Backtester:
             pos.stop = max(pos.stop, float(new_stop))
         else:  # SELL
             if high >= pos.stop:
-                self._close(pos, when, pos.stop, "stop", result)
+                reason = "trail" if pos.stop < pos.entry_price else "stop"
+                self._close(pos, when, pos.stop, reason, result)
                 return None
             self._try_partial_tp(pos, high, low)
             new_stop = close + self.settings.atr_trail_mult * atr_value
@@ -439,3 +443,92 @@ class Backtester:
         leg_r = pos.pnl_points / risk if risk > 0 else 0.0
         pos.r_multiple = pos.banked_r + pos.remaining_frac * leg_r
         result.trades.append(pos)
+
+
+def diagnose(summary: Dict[str, object], analytics: Dict[str, object]) -> List[Dict[str, str]]:
+    """成績の内訳を「なぜこの結果になったのか」の平易な日本語に翻訳する。
+
+    数字（勝率・ペイオフ・PF・決済理由・年別）から典型的な不調パターンを
+    判定し、初心者にも分かる説明と改善の方向を返す。
+    戻り値: [{"level": "bad|warn|good|info", "text": ...}, ...]
+    """
+    out: List[Dict[str, str]] = []
+
+    def add(level: str, text: str) -> None:
+        out.append({"level": level, "text": text})
+
+    n = int(summary.get("num_trades", 0) or 0)
+    wr = float(summary.get("win_rate", 0.0) or 0.0)
+    exp = float(summary.get("expectancy_r", 0.0) or 0.0)
+    pf = float(analytics.get("profit_factor", 0.0) or 0.0)
+    payoff = float(analytics.get("payoff", 0.0) or 0.0)
+    avg_win = float(analytics.get("avg_win_r", 0.0) or 0.0)
+    avg_loss = abs(float(analytics.get("avg_loss_r", 0.0) or 0.0))
+    by_reason = analytics.get("by_reason", {}) or {}
+    by_year = analytics.get("by_year", {}) or {}
+
+    if n == 0:
+        add("info", "この期間・条件では一度もエントリー条件が揃いませんでした。"
+                    "期間を延ばすか、通貨ペアを変えてみてください。")
+        return out
+
+    if n < 30:
+        add("warn", f"取引数が{n}件と少なめです。結果は運の影響を受けやすいので、"
+                    "判断は2年以上（30件以上）を目安にしてください。")
+
+    # --- 総合判定 ---
+    if pf >= 1.3 and exp > 0:
+        add("good", f"期間トータルで黒字です（PF {pf}、1取引あたり平均 {exp:+.2f}R）。")
+    elif pf < 1.0:
+        add("bad", f"期間トータルで負け越しです（プロフィットファクター {pf}"
+                   f"＝総利益が総損失の{pf}倍しかない）。1取引あたり平均 {exp:+.2f}R。")
+    else:
+        add("warn", f"かろうじてプラス〜トントン（PF {pf}）。コスト次第でマイナスに転びます。")
+
+    # --- 勝ち負けの「形」（コアの分析） ---
+    if payoff and payoff < 1.3 and wr < 0.45:
+        add("bad", f"典型的な『利小損大』です。勝率{wr*100:.0f}%と低いのに、"
+                   f"勝ち平均{avg_win:.2f}R ÷ 負け平均{avg_loss:.2f}R＝ペイオフ{payoff}しかありません。"
+                   "トレンド追随は本来『低勝率でも利大（ペイオフ2以上）』で勝つ設計です。"
+                   "利を伸ばせていない＝トレーリング（利食い）が早すぎて、"
+                   "伸びる前に切られている可能性が高いです。")
+    elif payoff and payoff >= 2.0:
+        add("good", f"勝ち平均{avg_win:.2f}R vs 負け平均{avg_loss:.2f}R（ペイオフ{payoff}）＝利大損小の理想形。"
+                    f"勝率{wr*100:.0f}%の低さはトレンド追随では正常です。")
+
+    # --- 決済理由の内訳 ---
+    stop = by_reason.get("stop")
+    trail = by_reason.get("trail")
+    tp = by_reason.get("take_profit")
+    if stop:
+        line = f"損切り(stop) {stop['count']}回で合計{stop['total_r']:+.1f}R"
+        if trail:
+            line += f"、利益トレール(trail) {trail['count']}回で合計{trail['total_r']:+.1f}R"
+        if tp:
+            line += f"、部分利確(take_profit) {tp['count']}回で合計{tp['total_r']:+.1f}R"
+        add("info", line + "。")
+    trail_ct = trail["count"] if trail else 0
+    if stop and stop["count"] > max(3, 2 * trail_ct):
+        add("warn", "決済の大半が損切りです。エントリー直後に逆行して切られている"
+                    "＝『ブレイクのダマシ』を多く掴んでいる疑いがあります。"
+                    "エントリーの質を上げる（レンジ回避・ダマシAIフィルタ）と改善する可能性があります。")
+
+    # --- 年別（相場つき依存の可視化） ---
+    if len(by_year) >= 2:
+        best = max(by_year.items(), key=lambda kv: kv[1]["total_r"])
+        worst = min(by_year.items(), key=lambda kv: kv[1]["total_r"])
+        if best[1]["total_r"] > 0 and worst[1]["total_r"] < 0:
+            add("info", f"年ごとのムラが大きいです（{best[0]}年 {best[1]['total_r']:+.1f}R、"
+                        f"{worst[0]}年 {worst[1]['total_r']:+.1f}R）。"
+                        "トレンドが出た年は勝ち、レンジの年は負ける＝相場つき依存が強いということです。")
+
+    # --- 改善の方向 ---
+    recs: List[str] = []
+    if payoff and payoff < 1.5:
+        recs.append("トレーリングを緩めて利を伸ばす（ATR_TRAIL_MULT を 2.0→3.0 など）")
+    if stop and stop["count"] > max(3, 2 * trail_ct):
+        recs.append("『レンジ回避(ADX)』フィルタをON（下のチェックで比較できます）")
+        recs.append("『部分利確』をON（先に一部利確して残りを伸ばす）")
+    if recs:
+        add("info", "改善の方向 → " + " / ".join(recs))
+    return out

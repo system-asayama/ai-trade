@@ -248,7 +248,7 @@ def backtest_view():
         hist=_hist_coverage(), periods=_BT_PERIODS,
         form={"instrument": settings.instruments[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
-              "f_adx": False, "f_tp": False, "f_ml": False})
+              "f_trail": False, "f_adx": False, "f_tp": False, "f_ml": False})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -263,18 +263,19 @@ def backtest_run():
         period_key = "60d"
     preset = _BT_PERIODS[period_key]
     # ロジック改良トグル
+    f_trail = request.form.get("f_trail") == "on"
     f_adx = request.form.get("f_adx") == "on"
     f_tp = request.form.get("f_tp") == "on"
     f_ml = request.form.get("f_ml") == "on"
-    improved = f_adx or f_tp or f_ml
+    improved = f_trail or f_adx or f_tp or f_ml
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
         "period": period_key,
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
-        "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml,
+        "f_trail": f_trail, "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml,
     }
-    error = result = summary = analytics = None
+    error = result = summary = analytics = diagnosis = None
     equity = []
     compare = None
     data_from = data_to = None
@@ -284,6 +285,8 @@ def backtest_run():
     def _make_settings(with_improve):
         s = Settings()
         if with_improve:
+            if f_trail:
+                s.atr_trail_mult = 3.0  # 利を伸ばす（早すぎる利食いを防ぐ）
             if f_adx:
                 s.entry_adx_min = 22.0
             if f_tp:
@@ -336,6 +339,8 @@ def backtest_run():
                 result = _bt(_make_settings(improved), f_ml and improved)
                 summary = result.summary()
                 analytics = result.analytics()
+                from .backtester import diagnose
+                diagnosis = diagnose(summary, analytics)
                 equity = _equity_curve(result)
 
                 # 改良を入れたときは「改良前（ベースライン）」も回して比較表示
@@ -348,7 +353,7 @@ def backtest_run():
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
         periods=_BT_PERIODS, result=result, summary=summary, analytics=analytics,
-        equity=equity, error=error, compare=compare,
+        diagnosis=diagnosis, equity=equity, error=error, compare=compare,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 

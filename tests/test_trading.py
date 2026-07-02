@@ -179,6 +179,20 @@ def test_partial_tp_changes_exit_and_bounds():
             assert t.r_multiple >= -1.0 - 1e-9
 
 
+def test_diagnose_flags_losing_low_payoff():
+    from trading.backtester import diagnose
+    # 負け越し・利小損大の成績を渡すと bad 診断が出る
+    summary = {"num_trades": 60, "win_rate": 0.34, "total_r": -4.0,
+               "expectancy_r": -0.07, "max_drawdown_r": -10.0}
+    analytics = {"profit_factor": 0.87, "payoff": 1.2, "avg_win_r": 1.0,
+                 "avg_loss_r": -0.83, "by_reason": {"stop": {"count": 40, "total_r": -30.0},
+                 "trail": {"count": 20, "total_r": 26.0}}, "by_year": {}}
+    findings = diagnose(summary, analytics)
+    levels = [f["level"] for f in findings]
+    assert "bad" in levels  # 負け越しを指摘
+    assert any("利小損大" in f["text"] for f in findings)
+
+
 def _linear_df(start: float, end: float, n: int = 300) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz="UTC")
     close = np.linspace(start, end, n)
