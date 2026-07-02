@@ -244,6 +244,18 @@ def test_strong_breakout_filter_rejects_weak_bar():
     assert sig.reason.get("stage") == "weakbreak"
 
 
+def test_diagnose_flags_single_trade_dependence():
+    from trading.backtester import diagnose
+    # 合計+18.55Rのうち最大の勝ちが+15.88R＝1回依存 → bad で指摘
+    summary = {"num_trades": 54, "win_rate": 0.315, "total_r": 18.55,
+               "expectancy_r": 0.34, "max_drawdown_r": -7.19}
+    analytics = {"profit_factor": 1.56, "payoff": 3.4, "avg_win_r": 3.03,
+                 "avg_loss_r": -0.89, "largest_win_r": 15.88,
+                 "by_reason": {}, "by_year": {}}
+    findings = diagnose(summary, analytics)
+    assert any("1回" in f["text"] and f["level"] == "bad" for f in findings)
+
+
 def test_diagnose_flags_losing_low_payoff():
     from trading.backtester import diagnose
     # 負け越し・利小損大の成績を渡すと bad 診断が出る

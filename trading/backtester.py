@@ -567,6 +567,15 @@ def diagnose(summary: Dict[str, object], analytics: Dict[str, object]) -> List[D
                     "＝『ブレイクのダマシ』を多く掴んでいる疑いがあります。"
                     "エントリーの質を上げる（レンジ回避・ダマシAIフィルタ）と改善する可能性があります。")
 
+    # --- 1回の大勝ち依存（脆さ）の検出 ---
+    total_r = float(summary.get("total_r", 0.0) or 0.0)
+    largest_win = float(analytics.get("largest_win_r", 0.0) or 0.0)
+    if total_r > 0 and largest_win >= 0.5 * total_r and n >= 10:
+        add("bad", f"利益の約{largest_win/total_r*100:.0f}%が、たった1回の大勝ち"
+                   f"(+{largest_win:.1f}R)に集中しています。この1回を除くと "
+                   f"{total_r - largest_win:+.1f}R。1回のまぐれ当たり頼みで、"
+                   "再現性は低い（脆い）と考えるべきです。")
+
     # --- 年別（相場つき依存の可視化） ---
     if len(by_year) >= 2:
         best = max(by_year.items(), key=lambda kv: kv[1]["total_r"])
