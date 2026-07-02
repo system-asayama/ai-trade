@@ -55,7 +55,13 @@
       </label><br>
       <label style="font-weight:normal;">
         <input type="checkbox" name="f_trail" {{ 'checked' if form.f_trail else '' }}>
-        利を伸ばす（トレーリングを緩める：2.0→3.0 ATR。早すぎる利食いを防ぐ）
+        利を伸ばす（トレーリングを緩める。早すぎる利食いを防ぐ）
+        <select name="trail_mult" style="margin-left:6px;">
+          {% for v in ['2.5','3.0','3.5','4.0','5.0'] %}
+            <option value="{{ v }}" {{ 'selected' if form.trail_mult|string == v else '' }}>{{ v }} ATR</option>
+          {% endfor %}
+        </select>
+        <span class="muted">（大きいほど利を伸ばす＝ペイオフ↑・勝率↓）</span>
       </label><br>
       <label style="font-weight:normal;">
         <input type="checkbox" name="f_adx" {{ 'checked' if form.f_adx else '' }}>
