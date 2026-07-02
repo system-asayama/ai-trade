@@ -69,6 +69,11 @@
         <span class="muted">（大きいほど利を伸ばす＝ペイオフ↑・勝率↓）</span>
       </label><br>
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_rangeok" {{ 'checked' if form.f_rangeok else '' }}>
+        <strong>本物のレンジのみ（おすすめ）</strong>：上限・下限を複数回タッチした横ばい相場からの
+        ブレイクだけを採用（ただのチャネル抜け／トレンド中の高値更新を除外）。
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_retest" {{ 'checked' if form.f_retest else '' }}>
         <strong>リテスト入場（おすすめ）</strong>：ブレイクを追いかけず、抜けた水準への押し戻りを待って入る。
         ダマシは押し戻りが成立しないので構造的に除外され、約定も水準近くで有利。
@@ -239,6 +244,7 @@
     <tr><th>① 評価したバー数</th><td>{{ d.bars }}</td></tr>
     <tr><th>② 上位足の方向が一致</th><td>{{ d.mtf_aligned }} 本</td></tr>
     <tr><th>③ さらにその向きへブレイク</th><td>{{ d.breakout }} 本</td></tr>
+    {% if d.norange_filtered %}<tr><th>　→ 本物のレンジでないため見送り</th><td>−{{ d.norange_filtered }} 本</td></tr>{% endif %}
     {% if d.weak_filtered %}<tr><th>　→ 弱いブレイクで見送り</th><td>−{{ d.weak_filtered }} 本</td></tr>{% endif %}
     <tr><th>④ さらに勢い(ATR)条件も通過</th><td>{{ d.atr_pass }} 本</td></tr>
     {% if d.range_filtered %}<tr><th>　→ レンジ回避で見送り</th><td>−{{ d.range_filtered }} 本</td></tr>{% endif %}

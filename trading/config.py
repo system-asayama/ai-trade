@@ -113,6 +113,11 @@ class Settings:
     # 「レンジまで丸ごと戻された＝ブレイク失敗」でのみ切る（レンジブレイクの定石）。
     range_stop: bool = field(
         default_factory=lambda: os.environ.get("RANGE_STOP", "0") in ("1", "true", "True"))
+    # 本物のレンジ確認: 「上限・下限をそれぞれ複数回タッチし、かつ横ばい（トレンドでない）」
+    # ときだけブレイクを有効にする。ただのローリング・チャネル抜けやトレンド中の高値更新を除外。
+    range_confirm: bool = field(
+        default_factory=lambda: os.environ.get("RANGE_CONFIRM", "0") in ("1", "true", "True"))
+    range_min_touches: int = field(default_factory=lambda: _int_env("RANGE_MIN_TOUCHES", 2))
 
     # --- Phase 5: ダマシ予測ML ---
     fakeout_min_proba: float = field(

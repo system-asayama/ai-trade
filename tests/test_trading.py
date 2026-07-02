@@ -179,6 +179,21 @@ def test_partial_tp_changes_exit_and_bounds():
             assert t.r_multiple >= -1.0 - 1e-9
 
 
+def test_is_confirmed_range_box_vs_trend():
+    from trading.strategy import _is_confirmed_range
+    # 明確なボックス: 100〜101 を何度も往復（横ばい・複数タッチ）→ レンジと認める
+    hi = [101, 100.5, 101, 100.4, 101, 100.3, 101, 100.2]
+    lo = [100, 99.9, 100.1, 100, 100.1, 100, 100.1, 100]
+    cl = [100.5, 100.2, 100.6, 100.2, 100.6, 100.2, 100.6, 100.3]
+    box = pd.DataFrame({"high": hi, "low": lo, "close": cl})
+    assert _is_confirmed_range(box, min_touches=2) is True
+
+    # 一方向トレンド: 端タッチが片側に偏り、純変化が大きい → レンジと認めない
+    base = np.linspace(100, 110, 8)
+    trend = pd.DataFrame({"high": base + 0.2, "low": base - 0.2, "close": base})
+    assert _is_confirmed_range(trend, min_touches=2) is False
+
+
 def test_entry_stop_range_vs_atr():
     settings = _settings()
     settings.atr_stop_mult = 1.5

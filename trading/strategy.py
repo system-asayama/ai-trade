@@ -50,6 +50,33 @@ def _breakout(trigger_df: pd.DataFrame, lookback: int) -> Optional[str]:
     return None
 
 
+def _is_confirmed_range(window: pd.DataFrame, min_touches: int) -> bool:
+    """window が「本物のレンジ（保ち合い）」かを判定する。
+
+    条件:
+      1. 上限・下限をそれぞれ min_touches 回以上タッチしている（＝水平のS/Rが機能）
+      2. 期間内の値動きが横ばい（純変化がレンジ高の半分以下＝トレンドでない）
+    これを満たさない＝ただのチャネル/トレンド中の値幅なのでレンジと認めない。
+    """
+    if window is None or len(window) < 4:
+        return False
+    highs = window["high"].to_numpy()
+    lows = window["low"].to_numpy()
+    closes = window["close"].to_numpy()
+    top = float(highs.max())
+    bottom = float(lows.min())
+    height = top - bottom
+    if height <= 0:
+        return False
+    tol = 0.15 * height  # 端から15%以内に来たらタッチとみなす
+    touches_top = int((highs >= top - tol).sum())
+    touches_bottom = int((lows <= bottom + tol).sum())
+    drift = abs(closes[-1] - closes[0])          # 期間の純変化
+    sideways = drift <= 0.5 * height             # トレンドでなく横ばいか
+    return bool(touches_top >= min_touches and touches_bottom >= min_touches
+                and sideways)
+
+
 def _breakout_bar_quality(bar, direction: str):
     """ブレイク足の (実体比, 終値の位置) を返す。
 
@@ -109,6 +136,13 @@ def evaluate(
     if brk is None or brk != mtf.aligned:
         return Signal(SIGNAL_NONE, price, atr_value,
                       {"stage": "breakout", "breakout": brk, "mtf": mtf.aligned})
+
+    # 2a. 本物のレンジからのブレイクか（ただのチャネル抜け/トレンド中の更新を除外）
+    if settings.range_confirm:
+        lb = settings.breakout_lookback
+        window = trigger_df.iloc[-(lb + 1):-1]  # ブレイク足の直前 lb 本＝レンジ候補
+        if not _is_confirmed_range(window, settings.range_min_touches):
+            return Signal(SIGNAL_NONE, price, atr_value, {"stage": "norange"})
 
     # 2b. ブレイク足の質（強いブレイクのみ）。実体が薄い/終値が端に無いブレイクは
     #     「抜けた直後に逆行」しやすいダマシなので除外する（プライスアクション）。

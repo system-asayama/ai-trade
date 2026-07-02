@@ -265,6 +265,7 @@ class Backtester:
             "bars": 0,             # 評価したバー数
             "mtf_aligned": 0,      # 上位足の方向が一致していたバー
             "breakout": 0,         # 方向一致 かつ その向きにブレイクしたバー
+            "norange_filtered": 0, # 本物のレンジでない（レンジ確認）で見送ったバー
             "atr_pass": 0,         # さらにATR（勢い）条件を満たしたバー
             "weak_filtered": 0,    # 弱いブレイク（強いブレイクのみ）で見送ったバー
             "range_filtered": 0,   # レンジ回避フィルタで見送ったバー
@@ -274,7 +275,8 @@ class Backtester:
         # ダマシAI用モデル（count_from を跨いだ時点で学習して以降に適用）
         model = None
         ml_trained = False
-        _PASSED_BREAKOUT = {"weakbreak", "atr", "volume", "regime", "fakeout", "entry"}
+        _PASSED_BREAKOUT = {"norange", "weakbreak", "atr", "volume", "regime",
+                            "fakeout", "entry"}
         _PASSED_ATR = {"volume", "regime", "fakeout", "entry"}
 
         # strategy.evaluate は直近の一定本数しか参照しないため、毎バー全履歴を
@@ -353,7 +355,9 @@ class Backtester:
                     diag["breakout"] += 1
                 if stage in _PASSED_ATR:
                     diag["atr_pass"] += 1
-                if stage == "weakbreak":
+                if stage == "norange":
+                    diag["norange_filtered"] += 1
+                elif stage == "weakbreak":
                     diag["weak_filtered"] += 1
                 elif stage == "regime":
                     diag["range_filtered"] += 1

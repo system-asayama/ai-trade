@@ -336,8 +336,8 @@ def backtest_view():
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_strong": False,
-              "f_retest": False, "f_rangestop": False, "f_adx": False,
-              "f_tp": False, "f_ml": False, "trail_mult": 3.0})
+              "f_retest": False, "f_rangeok": False, "f_rangestop": False,
+              "f_adx": False, "f_tp": False, "f_ml": False, "trail_mult": 3.0})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -356,12 +356,13 @@ def backtest_run():
     f_trail = request.form.get("f_trail") == "on"
     f_strong = request.form.get("f_strong") == "on"
     f_retest = request.form.get("f_retest") == "on"
+    f_rangeok = request.form.get("f_rangeok") == "on"
     f_rangestop = request.form.get("f_rangestop") == "on"
     f_adx = request.form.get("f_adx") == "on"
     f_tp = request.form.get("f_tp") == "on"
     f_ml = request.form.get("f_ml") == "on"
-    improved = (f_htf2 or f_trail or f_strong or f_retest or f_rangestop
-                or f_adx or f_tp or f_ml)
+    improved = (f_htf2 or f_trail or f_strong or f_retest or f_rangeok
+                or f_rangestop or f_adx or f_tp or f_ml)
     trail_mult = _fnum(request.form.get("trail_mult"), 3.0)
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
@@ -369,8 +370,8 @@ def backtest_run():
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
         "f_htf2": f_htf2, "f_trail": f_trail, "f_strong": f_strong,
-        "f_retest": f_retest, "f_rangestop": f_rangestop, "f_adx": f_adx,
-        "f_tp": f_tp, "f_ml": f_ml, "trail_mult": trail_mult,
+        "f_retest": f_retest, "f_rangeok": f_rangeok, "f_rangestop": f_rangestop,
+        "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml, "trail_mult": trail_mult,
     }
     error = result = summary = analytics = diagnosis = None
     equity = []
@@ -390,6 +391,8 @@ def backtest_run():
                 s.breakout_body_min = 0.4  # 強いブレイクのみ（弱い/ヒゲ主体を除外）
             if f_retest:
                 s.retest_entry = True  # 追いかけず押し戻り（リテスト）を待つ
+            if f_rangeok:
+                s.range_confirm = True  # 本物のレンジ（複数タッチ＋横ばい）からの放れのみ
             if f_rangestop:
                 s.range_stop = True  # 損切りをレンジの反対側の端に置く（構造的ストップ）
             if f_adx:
