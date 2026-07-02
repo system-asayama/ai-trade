@@ -120,10 +120,13 @@
     <button type="submit">実行する</button>
     <button type="submit" formaction="{{ url_for('trading.backtest_compare') }}"
             style="background:#e8590c; margin-left:10px;">🔬 フィルタ自動比較（裏で実行）</button>
+    <button type="submit" formaction="{{ url_for('trading.backtest_range') }}"
+            style="background:#2b8a3e; margin-left:10px;">🎯 レンジ手法(M5)を検証（裏で実行）</button>
     <a href="{{ url_for('trading.overview') }}" class="link" style="margin-left:12px;">← 戻る</a>
     <p class="muted" style="margin-top:6px;">
-      「🔬フィルタ自動比較」は、主要な組み合わせを裏側で一括検証し「合計R順」でランキング表示します
-      （タイムアウトしません・単一ペアのみ・数十秒〜1分）。
+      「🔬フィルタ自動比較」＝上のロジックの組み合わせ検証。
+      「🎯レンジ手法(M5)」＝あなたのルール（5分足レンジ・A順張り/B押し目、H1&H4順張り、1:1）を
+      A/B両方まとめて検証します（要M5データ・裏で実行・1〜2分）。
     </p>
   </form>
 </div>
@@ -139,6 +142,43 @@
   </div></div>
 {% elif compare_status and compare_status.state == 'error' %}
   <div class="card"><div class="flash error">⚠️ {{ compare_status.message }}</div></div>
+{% endif %}
+
+{% if range_status and range_status.state == 'running' %}
+  <meta http-equiv="refresh" content="5">
+  <div class="card"><div class="flash" style="background:#fff3bf;color:#663c00;">
+    ⏳ {{ range_status.message }}（5秒ごとに自動更新されます）
+  </div></div>
+{% elif range_status and range_status.state == 'error' %}
+  <div class="card"><div class="flash error">⚠️ {{ range_status.message }}</div></div>
+{% elif range_status and range_status.state == 'done' and range_status.payload %}
+{% set p = range_status.payload %}
+<div class="card" style="border:2px solid #2b8a3e;">
+  <h1>🎯 あなたのレンジ手法（M5）{% if p.meta %} — {{ p.meta.instrument }} / {{ p.meta.from }}〜{{ p.meta.to }}{% endif %}</h1>
+  <p class="muted">5分足レンジ（片方3・片方2タッチ）＋H1&H4順張り。A=抜けた瞬間・損切/利確=レンジ幅×1、
+    B=端タッチ即・損切/利確=レンジ幅×2。どちらもリスクリワード1:1。</p>
+  <table>
+    <tr><th></th><th>A 順張りブレイク</th><th>B 押し目・戻り</th></tr>
+    <tr><th>取引数</th><td>{{ p.modes.A.summary.num_trades }}</td><td>{{ p.modes.B.summary.num_trades }}</td></tr>
+    <tr><th>勝率</th>
+        <td>{{ "%.1f"|format(p.modes.A.summary.win_rate*100) }}%</td>
+        <td>{{ "%.1f"|format(p.modes.B.summary.win_rate*100) }}%</td></tr>
+    <tr><th>合計R</th>
+        <td style="color:{{ '#2b8a3e' if p.modes.A.summary.total_r>=0 else '#c92a2a' }};"><strong>{{ "%+.1f"|format(p.modes.A.summary.total_r) }}</strong></td>
+        <td style="color:{{ '#2b8a3e' if p.modes.B.summary.total_r>=0 else '#c92a2a' }};"><strong>{{ "%+.1f"|format(p.modes.B.summary.total_r) }}</strong></td></tr>
+    <tr><th>期待値(R/取引)</th>
+        <td>{{ "%.2f"|format(p.modes.A.summary.expectancy_r) }}</td>
+        <td>{{ "%.2f"|format(p.modes.B.summary.expectancy_r) }}</td></tr>
+    <tr><th>PF</th><td>{{ "%.2f"|format(p.modes.A.analytics.profit_factor) }}</td>
+        <td>{{ "%.2f"|format(p.modes.B.analytics.profit_factor) }}</td></tr>
+    <tr><th>最大DD(R)</th><td>{{ "%.1f"|format(p.modes.A.summary.max_drawdown_r) }}</td>
+        <td>{{ "%.1f"|format(p.modes.B.summary.max_drawdown_r) }}</td></tr>
+    <tr><th>後半R（OOS）</th>
+        <td>{% if p.modes.A.oos2 is not none %}{{ "%+.1f"|format(p.modes.A.oos2) }}{% else %}—{% endif %}</td>
+        <td>{% if p.modes.B.oos2 is not none %}{{ "%+.1f"|format(p.modes.B.oos2) }}{% else %}—{% endif %}</td></tr>
+  </table>
+  <p class="muted">1:1なので勝率がほぼ全て。勝率が55%を超え、かつ後半Rもプラスなら「使える」候補です。</p>
+</div>
 {% endif %}
 
 {% if compare_rows %}

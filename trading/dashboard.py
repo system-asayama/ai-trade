@@ -330,8 +330,10 @@ def hist_import_upload():
 def backtest_view():
     settings = Settings()
     cmp = _read_compare()
+    rng_st = _read_range()
     return render_template(
         "trading_backtest.html", settings=settings, result=None, compare=None,
+        range_status=rng_st,
         hist=_hist_coverage(), periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS,
         per_pair=None, selected_pairs=None, oos=None, filter_compare=None,
         compare_status=cmp,
@@ -523,6 +525,7 @@ def backtest_run():
         compare_status=cmp,
         compare_rows=(cmp.get("results") if cmp and cmp.get("state") == "done" else None),
         compare_meta=(cmp.get("meta") if cmp else None),
+        range_status=_read_range(),
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 
@@ -549,6 +552,31 @@ def backtest_compare():
                      daemon=True).start()
     flash(f"🔬 {inst} のフィルタ自動比較を開始しました。"
           "数十秒〜1分ほどで結果が出ます（この画面が自動更新されます）。", "success")
+    return redirect(url_for("trading.backtest_view"))
+
+
+@trading_bp.route("/backtest/range", methods=["POST"])
+@_login_required
+def backtest_range():
+    """ユーザー手法（M5レンジ A順張り/B押し目）をバックグラウンドで検証開始。"""
+    settings = Settings()
+    inst = (request.form.get("instrument") or settings.instruments[0]).strip()
+    if inst == "__ALL__":
+        inst = "USD_JPY"
+    period_key = request.form.get("period")
+    preset = _BT_PERIODS.get(period_key) or _BT_PERIODS["4y"]
+    days = preset.get("days")
+    spread = _fnum(request.form.get("spread_pips"), 0.8)
+    slip = _fnum(request.form.get("slippage_pips"), 0.2)
+    st = _read_range()
+    if st and st.get("state") == "running":
+        flash("すでにレンジ手法の検証中です。完了までお待ちください（自動更新）。", "error")
+        return redirect(url_for("trading.backtest_view"))
+    _write_range("running", "レンジ手法の検証を開始します…")
+    threading.Thread(target=_run_range_bt, args=(inst, days, spread, slip),
+                     daemon=True).start()
+    flash(f"🎯 {inst} のレンジ手法（M5・A順張り/B押し目）の検証を開始しました。"
+          "M5は本数が多いので1〜2分かかることがあります（自動更新）。", "success")
     return redirect(url_for("trading.backtest_view"))
 
 
@@ -668,6 +696,76 @@ def _run_compare_all(instrument, days, spread, slippage):
         _write_compare("done", f"比較完了（{instrument}）", rows, meta)
     except Exception as exc:  # noqa: BLE001
         _write_compare("error", f"比較に失敗しました: {exc}")
+
+
+# --- ユーザー手法（M5レンジ）バックテスト（バックグラウンド実行） --------------
+def _range_path():
+    base = os.path.dirname(os.environ.get("HIST_DB_PATH", "instance/histdata.db")) or "instance"
+    return os.path.join(base, "range_status.json")
+
+
+def _write_range(state, message, payload=None):
+    try:
+        path = _range_path()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"state": state, "message": message, "payload": payload},
+                      fh, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _read_range():
+    try:
+        with open(_range_path(), "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _run_range_bt(instrument, days, spread, slippage):
+    """ユーザー手法(A順張り/B押し目)をM5データでバックグラウンド検証する。"""
+    from .backtester import diagnose
+    from .data_feed import candles_to_df
+    from .histdata import HistStore
+    from .range_strategy import MODE_BREAKOUT, MODE_PULLBACK, run_range_strategy
+    try:
+        candles = HistStore().load_candles(instrument, "M5", limit=None)
+        if not candles:
+            _write_range("error", f"{instrument} のM5データがありません。"
+                         "「⭐全ペア・過去5年を一括取得」でM5対応後の再取り込みをしてください。")
+            return
+        df = candles_to_df(candles)
+        if len(df) < 500:
+            _write_range("error", "M5データが不足しています。")
+            return
+        cf = None
+        if days is not None:
+            c = df.index[-1] - pd.Timedelta(days=days)
+            if c > df.index[0]:
+                cf = c
+        start = cf or df.index[0]
+        end = df.index[-1]
+        modes = {}
+        for key, mode, label in [("A", MODE_BREAKOUT, "A 順張りブレイク"),
+                                 ("B", MODE_PULLBACK, "B 押し目・戻り")]:
+            _write_range("running", f"{label} を検証中…（M5）")
+            r = run_range_strategy(instrument, df, Settings(), mode=mode,
+                                   count_from=cf, spread_pips=spread,
+                                   slippage_pips=slippage)
+            su = r.summary()
+            a = r.analytics()
+            o = _oos_split(r.closed, start, end)
+            modes[key] = {"label": label, "summary": su, "analytics": a,
+                          "diagnosis": diagnose(su, a),
+                          "oos2": (o["second"]["total_r"] if o else None),
+                          "oos1": (o["first"]["total_r"] if o else None),
+                          "diag": r.diagnostics}
+        meta = {"instrument": instrument, "from": start.strftime("%Y-%m-%d"),
+                "to": end.strftime("%Y-%m-%d")}
+        _write_range("done", f"検証完了（{instrument} / M5）", {"modes": modes, "meta": meta})
+    except Exception as exc:  # noqa: BLE001
+        _write_range("error", f"検証に失敗しました: {exc}")
 
 
 def _equity_curve(result):
