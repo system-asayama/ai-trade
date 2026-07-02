@@ -329,16 +329,19 @@ def hist_import_upload():
 @_login_required
 def backtest_view():
     settings = Settings()
+    cmp = _read_compare()
     return render_template(
         "trading_backtest.html", settings=settings, result=None, compare=None,
         hist=_hist_coverage(), periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS,
         per_pair=None, selected_pairs=None, oos=None, filter_compare=None,
+        compare_status=cmp,
+        compare_rows=(cmp.get("results") if cmp and cmp.get("state") == "done" else None),
+        compare_meta=(cmp.get("meta") if cmp else None),
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_strong": False,
               "f_retest": False, "f_rangeok": False, "f_rangestop": False,
-              "f_adx": False, "f_tp": False, "f_ml": False, "trail_mult": 3.0,
-              "compare_filters": False})
+              "f_adx": False, "f_tp": False, "f_ml": False, "trail_mult": 3.0})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -362,7 +365,6 @@ def backtest_run():
     f_adx = request.form.get("f_adx") == "on"
     f_tp = request.form.get("f_tp") == "on"
     f_ml = request.form.get("f_ml") == "on"
-    compare_filters = request.form.get("compare_filters") == "on"
     improved = (f_htf2 or f_trail or f_strong or f_retest or f_rangeok
                 or f_rangestop or f_adx or f_tp or f_ml)
     trail_mult = _fnum(request.form.get("trail_mult"), 3.0)
@@ -375,7 +377,6 @@ def backtest_run():
         "f_htf2": f_htf2, "f_trail": f_trail, "f_strong": f_strong,
         "f_retest": f_retest, "f_rangeok": f_rangeok, "f_rangestop": f_rangestop,
         "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml, "trail_mult": trail_mult,
-        "compare_filters": compare_filters,
     }
     error = result = summary = analytics = diagnosis = None
     equity = []
@@ -447,50 +448,7 @@ def backtest_run():
                            slippage_pips=form["slippage_pips"])
             return b.run(pair, d, count_from=cf, fakeout_ml=use_ml)
 
-        if compare_filters and inst != "__ALL__":
-            # --- フィルタ組み合わせの自動比較（目視での当てっこをやめる） ---
-            df, src = _load_df(inst)
-            if df is None:
-                error = "この通貨ペアのデータがありません。取り込むか期間を変えてください。"
-            else:
-                source_used = src
-                cf = _cf(df)
-                data_from = (cf or df.index[0]).strftime("%Y-%m-%d")
-                data_to = df.index[-1].strftime("%Y-%m-%d")
-                base = {"htf_granularities": ["H4", "D"], "atr_trail_mult": 3.0}
-
-                def _mk(**kw):
-                    s = Settings()
-                    for k, v in kw.items():
-                        setattr(s, k, v)
-                    return s
-
-                matrix = [
-                    ("改良なし（素の状態）", {}),
-                    ("エントリー増やすのみ", {"htf_granularities": ["H4", "D"]}),
-                    ("利を伸ばすのみ", {"atr_trail_mult": 3.0}),
-                    ("増やす＋利伸ばす", dict(base)),
-                    ("＋本物のレンジのみ", {**base, "range_confirm": True}),
-                    ("＋リテスト入場", {**base, "retest_entry": True}),
-                    ("＋強いブレイク", {**base, "breakout_body_min": 0.4}),
-                    ("＋レンジ回避", {**base, "entry_adx_min": 22.0}),
-                    ("＋部分利確", {**base, "partial_tp_r": 1.0}),
-                    ("全部入り", {**base, "range_confirm": True, "retest_entry": True,
-                                 "breakout_body_min": 0.4, "entry_adx_min": 22.0}),
-                ]
-                filter_compare = []
-                for label, kw in matrix:
-                    r = _run(inst, _mk(**kw), False, df, cf)
-                    su = r.summary()
-                    a = r.analytics()
-                    o = _oos_split(r.closed, cf or df.index[0], df.index[-1])
-                    filter_compare.append({
-                        "label": label, "num_trades": su["num_trades"],
-                        "win_rate": su["win_rate"], "total_r": su["total_r"],
-                        "max_dd": su["max_drawdown_r"], "pf": a["profit_factor"],
-                        "oos2": (o["second"]["total_r"] if o else None)})
-                filter_compare.sort(key=lambda x: x["total_r"], reverse=True)
-        elif inst == "__ALL__":
+        if inst == "__ALL__":
             # --- 全ペア合算（分散効果を見る） ---
             pairs = [p for p in _BT_INSTRUMENTS if p in cov]
             if selected_pairs:  # 明示的に選ばれたペアだけに絞る
@@ -550,13 +508,43 @@ def backtest_run():
     except Exception as exc:  # noqa: BLE001
         error = f"バックテストに失敗しました: {exc}"
 
+    cmp = _read_compare()
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
         periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS, result=result,
         summary=summary, analytics=analytics, diagnosis=diagnosis, equity=equity,
         error=error, compare=compare, per_pair=per_pair, oos=oos,
         filter_compare=filter_compare, selected_pairs=selected_pairs,
+        compare_status=cmp,
+        compare_rows=(cmp.get("results") if cmp and cmp.get("state") == "done" else None),
+        compare_meta=(cmp.get("meta") if cmp else None),
         data_from=data_from, data_to=data_to, source_used=source_used)
+
+
+@trading_bp.route("/backtest/compare", methods=["POST"])
+@_login_required
+def backtest_compare():
+    """フィルタ組み合わせ自動比較をバックグラウンドで開始（タイムアウト回避）。"""
+    settings = Settings()
+    inst = (request.form.get("instrument") or settings.instruments[0]).strip()
+    if inst == "__ALL__":
+        flash("フィルタ自動比較は単一ペアを選んで実行してください。", "error")
+        return redirect(url_for("trading.backtest_view"))
+    period_key = request.form.get("period")
+    preset = _BT_PERIODS.get(period_key) or _BT_PERIODS["4y"]
+    days = preset.get("days")
+    spread = _fnum(request.form.get("spread_pips"), 0.8)
+    slip = _fnum(request.form.get("slippage_pips"), 0.2)
+    st = _read_compare()
+    if st and st.get("state") == "running":
+        flash("すでに比較を実行中です。完了までお待ちください（自動更新されます）。", "error")
+        return redirect(url_for("trading.backtest_view"))
+    _write_compare("running", "比較を開始します…")
+    threading.Thread(target=_run_compare_all, args=(inst, days, spread, slip),
+                     daemon=True).start()
+    flash(f"🔬 {inst} のフィルタ自動比較を開始しました。"
+          "数十秒〜1分ほどで結果が出ます（この画面が自動更新されます）。", "success")
+    return redirect(url_for("trading.backtest_view"))
 
 
 def _fnum(value, default):
@@ -587,6 +575,90 @@ def _oos_split(closed, start_ts, end_ts):
         return None
     return {"mid": mid.strftime("%Y-%m-%d"),
             "first": _summ(first), "second": _summ(second)}
+
+
+# --- フィルタ組み合わせ自動比較（バックグラウンド実行） ---------------------
+_FILTER_BASE = {"htf_granularities": ["H4", "D"], "atr_trail_mult": 3.0}
+_FILTER_MATRIX = [
+    ("改良なし（素の状態）", {}),
+    ("エントリー増やすのみ", {"htf_granularities": ["H4", "D"]}),
+    ("利を伸ばすのみ", {"atr_trail_mult": 3.0}),
+    ("増やす＋利伸ばす", dict(_FILTER_BASE)),
+    ("＋本物のレンジのみ", {**_FILTER_BASE, "range_confirm": True}),
+    ("＋リテスト入場", {**_FILTER_BASE, "retest_entry": True}),
+    ("＋強いブレイク", {**_FILTER_BASE, "breakout_body_min": 0.4}),
+    ("＋レンジ回避", {**_FILTER_BASE, "entry_adx_min": 22.0}),
+    ("＋部分利確", {**_FILTER_BASE, "partial_tp_r": 1.0}),
+    ("全部入り", {**_FILTER_BASE, "range_confirm": True, "retest_entry": True,
+                "breakout_body_min": 0.4, "entry_adx_min": 22.0}),
+]
+
+
+def _compare_path():
+    base = os.path.dirname(os.environ.get("HIST_DB_PATH", "instance/histdata.db")) or "instance"
+    return os.path.join(base, "compare_status.json")
+
+
+def _write_compare(state, message, results=None, meta=None):
+    try:
+        path = _compare_path()
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump({"state": state, "message": message,
+                       "results": results, "meta": meta}, fh, ensure_ascii=False)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _read_compare():
+    try:
+        with open(_compare_path(), "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _run_compare_all(instrument, days, spread, slippage):
+    """全フィルタ組み合わせをバックグラウンドで検証し、合計R順の結果を書き出す。"""
+    from .backtester import Backtester
+    from .data_feed import candles_to_df
+    from .histdata import HistStore
+    try:
+        if instrument not in _hist_coverage():
+            _write_compare("error", f"{instrument} の長期データが未取り込みです。先に取り込んでください。")
+            return
+        df = candles_to_df(HistStore().load_candles(instrument, "M15", limit=None))
+        if len(df) < 300:
+            _write_compare("error", "データが不足しています。")
+            return
+        cf = None
+        if days is not None:
+            c = df.index[-1] - pd.Timedelta(days=days)
+            if c > df.index[0]:
+                cf = c
+        start = cf or df.index[0]
+        end = df.index[-1]
+        rows = []
+        for idx, (label, kw) in enumerate(_FILTER_MATRIX, 1):
+            _write_compare("running", f"検証中… {label}（{idx}/{len(_FILTER_MATRIX)}）")
+            s = Settings()
+            for k, v in kw.items():
+                setattr(s, k, v)
+            r = Backtester(s, spread_pips=spread, slippage_pips=slippage).run(
+                instrument, df, count_from=cf)
+            su = r.summary()
+            a = r.analytics()
+            o = _oos_split(r.closed, start, end)
+            rows.append({"label": label, "num_trades": su["num_trades"],
+                         "win_rate": su["win_rate"], "total_r": su["total_r"],
+                         "max_dd": su["max_drawdown_r"], "pf": a["profit_factor"],
+                         "oos2": (o["second"]["total_r"] if o else None)})
+        rows.sort(key=lambda x: x["total_r"], reverse=True)
+        meta = {"instrument": instrument, "from": start.strftime("%Y-%m-%d"),
+                "to": end.strftime("%Y-%m-%d")}
+        _write_compare("done", f"比較完了（{instrument}）", rows, meta)
+    except Exception as exc:  # noqa: BLE001
+        _write_compare("error", f"比較に失敗しました: {exc}")
 
 
 def _equity_curve(result):

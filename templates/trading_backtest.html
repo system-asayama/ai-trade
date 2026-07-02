@@ -112,14 +112,14 @@
         <span class="muted">※対象期間より前のデータで学習するため「直近○年」で有効。全期間では学習不可</span>
       </label>
     </div>
-    <label style="font-weight:normal; display:block; margin:10px 0; padding:8px;
-                  background:#fff3bf; border-radius:8px;">
-      <input type="checkbox" name="compare_filters" {{ 'checked' if form.compare_filters else '' }}>
-      🔬 <strong>フィルタ組み合わせを自動比較する</strong>（ONにすると上のチェックは無視して、
-      主要な組み合わせを一括検証し「合計R順」でランキング表示。単一ペアのみ）
-    </label>
     <button type="submit">実行する</button>
+    <button type="submit" formaction="{{ url_for('trading.backtest_compare') }}"
+            style="background:#e8590c; margin-left:10px;">🔬 フィルタ自動比較（裏で実行）</button>
     <a href="{{ url_for('trading.overview') }}" class="link" style="margin-left:12px;">← 戻る</a>
+    <p class="muted" style="margin-top:6px;">
+      「🔬フィルタ自動比較」は、主要な組み合わせを裏側で一括検証し「合計R順」でランキング表示します
+      （タイムアウトしません・単一ペアのみ・数十秒〜1分）。
+    </p>
   </form>
 </div>
 
@@ -127,15 +127,24 @@
   <div class="card"><div class="flash error">{{ error }}</div></div>
 {% endif %}
 
-{% if filter_compare %}
+{% if compare_status and compare_status.state == 'running' %}
+  <meta http-equiv="refresh" content="5">
+  <div class="card"><div class="flash" style="background:#fff3bf;color:#663c00;">
+    ⏳ {{ compare_status.message }}（5秒ごとに自動更新されます）
+  </div></div>
+{% elif compare_status and compare_status.state == 'error' %}
+  <div class="card"><div class="flash error">⚠️ {{ compare_status.message }}</div></div>
+{% endif %}
+
+{% if compare_rows %}
 <div class="card" style="border:2px solid #e8590c;">
-  <h1>🔬 フィルタ組み合わせ比較（{{ form.instrument }} / {{ data_from }}〜{{ data_to }}）</h1>
+  <h1>🔬 フィルタ組み合わせ比較{% if compare_meta %}（{{ compare_meta.instrument }} / {{ compare_meta.from }}〜{{ compare_meta.to }}）{% endif %}</h1>
   <p class="muted">同じ期間で主要な組み合わせを一括検証し、合計R順に並べました。
     <strong>合計Rが大きく、かつ「後半R（未知期間相当）」もプラス</strong>のものが本命です。
     フィルタを足すほど良くなるとは限りません（このロジックは少数の大勝ちで稼ぐため、絞りすぎると逆効果）。</p>
   <table>
     <tr><th>構成</th><th>取引</th><th>勝率</th><th>合計R</th><th>PF</th><th>最大DD</th><th>後半R</th></tr>
-    {% for c in filter_compare %}
+    {% for c in compare_rows %}
     <tr>
       <td>{{ c.label }}</td>
       <td>{{ c.num_trades }}</td>
