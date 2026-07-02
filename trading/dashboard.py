@@ -237,8 +237,11 @@ def _run_import_all(instruments, years, current_year) -> None:
         for inst in instruments:
             for yr in years:
                 step += 1
-                # 過去年で既に揃っていればスキップ（今年は増え続けるので毎回更新）
-                if yr < current_year and store.year_count(inst, yr) > 20000:
+                # 過去年で M15 と M5 の両方が揃っていればスキップ（今年は毎回更新）。
+                # M5 も条件に入れないと、M15だけ既存の年でM5が永久に入らない。
+                if (yr < current_year
+                        and store.year_count(inst, yr, "M15") > 20000
+                        and store.year_count(inst, yr, "M5") > 20000):
                     skipped += 1
                     continue
                 _write_status(
