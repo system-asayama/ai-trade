@@ -311,24 +311,25 @@ class Backtester:
 
             # --- リテスト待ち（保留注文）の処理：毎バー・ポジション無しのとき ---
             # 抜けた水準まで押し戻り、そこを保って引ければ入場（＝ダマシは成立しない）。
+            # pending = (side, レンジ上限, レンジ下限, atr, 残りバー数)
             if position is None and pending is not None:
-                pside, plevel, patr, pleft = pending
+                pside, rtop, rbot, patr, pleft = pending
                 pending = None  # このバーで確定 or 消化。残れば下で作り直す
-                if pside == SIGNAL_BUY and lows[i] <= plevel:
-                    if close_i >= plevel:  # 水準を保って引けた＝リテスト成立
+                if pside == SIGNAL_BUY and lows[i] <= rtop:
+                    if close_i >= rtop:  # 抜けた上限まで戻り、保って引けた＝成立
+                        stop = self._entry_stop(SIGNAL_BUY, close_i, patr, rtop, rbot)
                         position = self._make_trade(
-                            instrument, SIGNAL_BUY, close_i,
-                            plevel - settings.atr_stop_mult * patr, when, {"stage": "retest"})
+                            instrument, SIGNAL_BUY, close_i, stop, when, {"stage": "retest"})
                     # 割って引けた＝ダマシ → 何もしない（見送り）
-                elif pside == SIGNAL_SELL and highs[i] >= plevel:
-                    if close_i <= plevel:
+                elif pside == SIGNAL_SELL and highs[i] >= rbot:
+                    if close_i <= rbot:
+                        stop = self._entry_stop(SIGNAL_SELL, close_i, patr, rtop, rbot)
                         position = self._make_trade(
-                            instrument, SIGNAL_SELL, close_i,
-                            plevel + settings.atr_stop_mult * patr, when, {"stage": "retest"})
+                            instrument, SIGNAL_SELL, close_i, stop, when, {"stage": "retest"})
                 else:
                     pleft -= 1  # まだ水準に触れていない → 期限まで待つ
                     if pleft > 0:
-                        pending = (pside, plevel, patr, pleft)
+                        pending = (pside, rtop, rbot, patr, pleft)
 
             if counting:
                 diag["bars"] += 1
@@ -368,17 +369,18 @@ class Backtester:
                     position = None
 
             if position is None and signal.is_entry:
+                # ブレイクしたレンジの上限/下限（＝損切りの基準になる構造）
+                lb = settings.breakout_lookback
+                lo = max(0, i - lb)
+                rtop = float(highs[lo:i].max()) if i > lo else close_i
+                rbot = float(lows[lo:i].min()) if i > lo else close_i
                 if settings.retest_entry:
                     # 追いかけず、抜けた水準への押し戻りを待つ保留にする
-                    lb = settings.breakout_lookback
-                    lo = max(0, i - lb)
-                    if signal.side == SIGNAL_BUY:
-                        level = float(highs[lo:i].max()) if i > lo else close_i
-                    else:
-                        level = float(lows[lo:i].min()) if i > lo else close_i
-                    pending = (signal.side, level, atrs[i], settings.retest_max_bars)
+                    pending = (signal.side, rtop, rbot, atrs[i], settings.retest_max_bars)
                 else:
-                    position = self._open(instrument, signal, atrs[i], when)
+                    stop = self._entry_stop(signal.side, signal.price, atrs[i], rtop, rbot)
+                    position = self._make_trade(instrument, signal.side, signal.price,
+                                                stop, when, signal.reason)
 
         # 最終バーで残ポジは終値クローズ
         if position is not None:
@@ -405,6 +407,18 @@ class Backtester:
             initial_risk=abs(entry - stop),
             entry_reason=dict(reason) if reason else {},
         )
+
+    def _entry_stop(self, side, ref_price, atr, range_top, range_bottom) -> float:
+        """初期ストップ価格を返す。
+
+        range_stop=True なら「レンジの反対側の端」（上抜けは下限、下抜けは上限）。
+        それ以外は従来どおり建値から ATR×倍率 の距離。
+        """
+        s = self.settings
+        if s.range_stop:
+            return float(range_bottom if side == SIGNAL_BUY else range_top)
+        dist = s.atr_stop_mult * float(atr or 0.0)
+        return ref_price - dist if side == SIGNAL_BUY else ref_price + dist
 
     def _open(self, instrument: str, signal, bar_atr, when) -> BacktestTrade:
         atr_value = signal.atr or float(bar_atr or 0.0)

@@ -74,6 +74,11 @@
         ダマシは押し戻りが成立しないので構造的に除外され、約定も水準近くで有利。
       </label><br>
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_rangestop" {{ 'checked' if form.f_rangestop else '' }}>
+        <strong>レンジ端で損切り</strong>：ATR距離ではなく「レンジの反対側の端」に損切りを置く
+        （上抜けはレンジ下限の外。押し戻りでは狩られず、レンジまで丸ごと戻されたら＝失敗で切る）
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_strong" {{ 'checked' if form.f_strong else '' }}>
         強いブレイクのみ（実体が薄い/ヒゲ主体の弱いブレイクを除外＝抜けた直後の逆行を減らす）
       </label><br>

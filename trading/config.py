@@ -108,6 +108,11 @@ class Settings:
     retest_entry: bool = field(
         default_factory=lambda: os.environ.get("RETEST_ENTRY", "0") in ("1", "true", "True"))
     retest_max_bars: int = field(default_factory=lambda: _int_env("RETEST_MAX_BARS", 8))
+    # 構造的な損切り: ATR距離ではなく「レンジの反対側の端」に損切りを置く。
+    # 上抜けならレンジ下限の外、下抜けならレンジ上限の外。押し戻りでは狩られず、
+    # 「レンジまで丸ごと戻された＝ブレイク失敗」でのみ切る（レンジブレイクの定石）。
+    range_stop: bool = field(
+        default_factory=lambda: os.environ.get("RANGE_STOP", "0") in ("1", "true", "True"))
 
     # --- Phase 5: ダマシ予測ML ---
     fakeout_min_proba: float = field(

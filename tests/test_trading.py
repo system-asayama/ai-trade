@@ -179,6 +179,21 @@ def test_partial_tp_changes_exit_and_bounds():
             assert t.r_multiple >= -1.0 - 1e-9
 
 
+def test_entry_stop_range_vs_atr():
+    settings = _settings()
+    settings.atr_stop_mult = 1.5
+    bt = Backtester(settings)
+    B, S = strategy.SIGNAL_BUY, strategy.SIGNAL_SELL
+    # ATR距離モード: 建値 ∓ 1.5×ATR
+    settings.range_stop = False
+    assert bt._entry_stop(B, 100.0, 0.2, 101.0, 99.0) == 100.0 - 0.3
+    assert bt._entry_stop(S, 100.0, 0.2, 101.0, 99.0) == 100.0 + 0.3
+    # レンジ端モード: 買いはレンジ下限、売りはレンジ上限
+    settings.range_stop = True
+    assert bt._entry_stop(B, 100.0, 0.2, 101.0, 99.0) == 99.0
+    assert bt._entry_stop(S, 100.0, 0.2, 101.0, 99.0) == 101.0
+
+
 def test_retest_entry_mode_tags_and_runs():
     from trading.synthetic import make_ohlcv
     settings = _settings()
