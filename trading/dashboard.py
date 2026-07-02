@@ -332,7 +332,7 @@ def backtest_view():
     return render_template(
         "trading_backtest.html", settings=settings, result=None, compare=None,
         hist=_hist_coverage(), periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS,
-        per_pair=None, selected_pairs=None,
+        per_pair=None, selected_pairs=None, oos=None,
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_strong": False,
@@ -377,6 +377,7 @@ def backtest_run():
     error = result = summary = analytics = diagnosis = None
     equity = []
     compare = None
+    oos = None
     data_from = data_to = None
     source_used = None
     days = preset.get("days")
@@ -474,6 +475,7 @@ def backtest_run():
                     analytics = combo.analytics()
                     diagnosis = diagnose(summary, analytics)
                     equity = _equity_curve(combo)
+                    oos = _oos_split(combo.closed, min(froms), max(tos))
                     per_pair.sort(key=lambda x: x["total_r"], reverse=True)
                     data_from = min(froms).strftime("%Y-%m-%d")
                     data_to = max(tos).strftime("%Y-%m-%d")
@@ -494,6 +496,7 @@ def backtest_run():
                 analytics = result.analytics()
                 diagnosis = diagnose(summary, analytics)
                 equity = _equity_curve(result)
+                oos = _oos_split(result.closed, count_from or df.index[0], df.index[-1])
                 if improved:
                     base = _run(inst, _make_settings(False), False, df, count_from)
                     compare = {"base": base.summary(), "improved": summary}
@@ -504,7 +507,7 @@ def backtest_run():
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
         periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS, result=result,
         summary=summary, analytics=analytics, diagnosis=diagnosis, equity=equity,
-        error=error, compare=compare, per_pair=per_pair,
+        error=error, compare=compare, per_pair=per_pair, oos=oos,
         selected_pairs=selected_pairs,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
@@ -514,6 +517,29 @@ def _fnum(value, default):
         return max(0.0, float(value))
     except (TypeError, ValueError):
         return default
+
+
+def _oos_split(closed, start_ts, end_ts):
+    """期間を前半/後半に分け、それぞれの成績を返す（過学習/まぐれの検出）。
+
+    両方プラスなら頑健な可能性、片方だけプラスなら過去最適化（過学習）の疑い。
+    """
+    from .backtester import BacktestResult
+    if not closed or start_ts is None or end_ts is None or end_ts <= start_ts:
+        return None
+    mid = start_ts + (end_ts - start_ts) / 2
+
+    def _summ(trades):
+        r = BacktestResult(instrument="x")
+        r.trades = list(trades)
+        return r.summary()
+
+    first = [t for t in closed if t.entry_time is not None and t.entry_time < mid]
+    second = [t for t in closed if t.entry_time is not None and t.entry_time >= mid]
+    if not first or not second:
+        return None
+    return {"mid": mid.strftime("%Y-%m-%d"),
+            "first": _summ(first), "second": _summ(second)}
 
 
 def _equity_curve(result):

@@ -160,6 +160,38 @@
   この期間・条件では有利だったことを示します（将来を保証しません）。</p>
 </div>
 
+{% if oos %}
+<div class="card" style="border:2px solid #e8590c;">
+  <h1>🔬 アウトオブサンプル検証（前半 → 後半）</h1>
+  <p class="muted">
+    期間を {{ oos.mid }} で前半・後半に分けた成績です。<br>
+    <strong>両方プラスなら「まぐれ/過去最適化」ではない可能性が高い</strong>。
+    片方だけプラス（特に後半がマイナス）なら、過去に合わせすぎ（過学習）で
+    実戦では通用しない疑いが濃厚です。ここが最重要チェックです。
+  </p>
+  <table>
+    <tr><th></th><th>前半（イン・サンプル）</th><th>後半（アウト・オブ・サンプル）</th></tr>
+    <tr><th>取引数</th><td>{{ oos.first.num_trades }}</td><td>{{ oos.second.num_trades }}</td></tr>
+    <tr><th>勝率</th><td>{{ "%.1f"|format(oos.first.win_rate*100) }}%</td>
+        <td>{{ "%.1f"|format(oos.second.win_rate*100) }}%</td></tr>
+    <tr><th>合計R</th>
+        <td style="color:{{ '#2b8a3e' if oos.first.total_r>=0 else '#c92a2a' }};">{{ "%+.2f"|format(oos.first.total_r) }}</td>
+        <td style="color:{{ '#2b8a3e' if oos.second.total_r>=0 else '#c92a2a' }};"><strong>{{ "%+.2f"|format(oos.second.total_r) }}</strong></td></tr>
+    <tr><th>期待値(R/取引)</th><td>{{ "%.2f"|format(oos.first.expectancy_r) }}</td>
+        <td>{{ "%.2f"|format(oos.second.expectancy_r) }}</td></tr>
+  </table>
+  <p class="muted">
+    {% if oos.first.total_r >= 0 and oos.second.total_r >= 0 %}
+      ✅ 前半・後半とも黒字。頑健さの兆候あり（それでも将来を保証はしません）。
+    {% elif oos.second.total_r < 0 %}
+      ⚠️ 後半（見たことのない期間相当）がマイナス。過学習/まぐれの疑いが濃厚です。
+    {% else %}
+      ⚠️ 前半がマイナス。安定していません。
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+
 {% if per_pair %}
 <div class="card">
   <h1>🌐 通貨ペア別の内訳（合算）</h1>
