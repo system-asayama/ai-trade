@@ -32,6 +32,15 @@
       {% endfor %}
     </div>
     {% endif %}
+    <label>トリガー足（ロジックを動かす時間足）</label>
+    <select name="granularity">
+      <option value="M15" {{ 'selected' if form.granularity != 'M5' else '' }}>15分足（M15）</option>
+      <option value="M5" {{ 'selected' if form.granularity == 'M5' else '' }}>5分足（M5・要M5取り込み・本数多く低速）</option>
+    </select>
+    <p class="muted" style="margin:2px 0 6px;">
+      「上のロジック（ブレイク＋各フィルタ）」を、15分足か5分足のどちらで動かすか。
+      M5は本数が多く重いので、まずは直近1年など短めの期間から試すのがおすすめです。
+    </p>
     <label>集計期間（直近◯◯）</label>
     <p class="muted" style="margin:2px 0 6px;">
       どの期間でも取り込み済みの全データで一度シミュレーションし、直近の指定期間だけを集計します。

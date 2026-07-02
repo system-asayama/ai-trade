@@ -343,6 +343,7 @@ def backtest_view():
         compare_rows=(cmp.get("results") if cmp and cmp.get("state") == "done" else None),
         compare_meta=(cmp.get("meta") if cmp else None),
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
+              "granularity": "M15",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_strong": False,
               "f_retest": False, "f_rangeok": False, "f_rangestop": False,
@@ -376,9 +377,13 @@ def backtest_run():
                 or f_rangestop or f_adx or f_tp or f_fixtp or f_ml)
     trail_mult = _fnum(request.form.get("trail_mult"), 3.0)
     selected_pairs = request.form.getlist("pairs")  # 合算に含めるペア（空=全部）
+    gran = request.form.get("granularity")
+    if gran not in ("M15", "M5"):
+        gran = "M15"
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
         "period": period_key,
+        "granularity": gran,
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
         "f_htf2": f_htf2, "f_trail": f_trail, "f_strong": f_strong,
@@ -425,19 +430,15 @@ def backtest_run():
 
         # どの期間でも「全データで1回シミュレーション → 直近N日だけ集計」する。
         # 全期間で指標を暖機してから切り出すので、短い期間は必ず長い期間の一部分になる。
-        def _load_df(pair):
-            """(df, source) を返す。データが無ければ (None, None)。"""
-            cands = []
-            src = None
-            if pair in cov:
-                from .histdata import HistStore
-                cands = HistStore().load_candles(pair, "M15", limit=None)
-                if cands:
-                    src = "hist"
-            if not cands and days is not None and days <= 60:
+        def _load_df(pair, gran="M15"):
+            """(df, source) を返す。データが無ければ (None, None)。gran=足種。"""
+            from .histdata import HistStore
+            cands = HistStore().load_candles(pair, gran, limit=None)
+            src = "hist" if cands else None
+            if not cands and gran == "M15" and days is not None and days <= 60:
                 from .market_data import YahooMarketData
                 cands = YahooMarketData().get_candles(
-                    pair, settings.trigger_granularity, count=5000, range_override="60d")
+                    pair, "M15", count=5000, range_override="60d")
                 if cands:
                     src = "yahoo"
             if not cands:
@@ -495,11 +496,13 @@ def backtest_run():
                     data_from = min(froms).strftime("%Y-%m-%d")
                     data_to = max(tos).strftime("%Y-%m-%d")
         else:
-            # --- 単一ペア ---
-            df, src = _load_df(inst)
+            # --- 単一ペア（足種は M15 / M5 を選べる） ---
+            df, src = _load_df(inst, form["granularity"])
             if df is None:
-                error = ("この通貨ペアの長期データが未取り込みです。"
-                         "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
+                error = (f"{inst} の {form['granularity']} データがありません。"
+                         "M5を使う場合は先に取り込み直してください（M5対応後の再取り込みが必要）。"
+                         if form["granularity"] == "M5" else
+                         "この通貨ペアの長期データが未取り込みです。取り込んでください。")
             else:
                 source_used = src
                 count_from = _cf(df)
