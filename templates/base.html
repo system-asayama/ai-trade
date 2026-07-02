@@ -21,6 +21,9 @@
     label { display:block; margin:12px 0 4px; font-size:14px; color:var(--muted); }
     input, select { width:100%; padding:10px; border:1px solid #d0d4dd;
                     border-radius:8px; font-size:15px; }
+    /* チェックボックス/ラジオは全幅にしない（ラベルと横並びにする） */
+    input[type=checkbox], input[type=radio] { width:auto; display:inline-block;
+                    padding:0; margin:0 6px 0 0; vertical-align:middle; }
     button { cursor:pointer; border:none; border-radius:8px; padding:10px 16px;
              font-size:15px; background:var(--primary); color:#fff; margin-top:16px; }
     button.danger { background:var(--danger); margin-top:0; }
