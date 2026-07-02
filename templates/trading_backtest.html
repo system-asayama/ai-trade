@@ -46,6 +46,23 @@
         <input type="number" step="0.1" name="slippage_pips" value="{{ form.slippage_pips }}">
       </div>
     </div>
+
+    <label>ロジック改良（ONにすると「改良前→改良後」を並べて比較します）</label>
+    <div style="margin:4px 0 10px; line-height:1.9;">
+      <label style="font-weight:normal;">
+        <input type="checkbox" name="f_adx" {{ 'checked' if form.f_adx else '' }}>
+        レンジ回避（勢いADXが弱い相場ではエントリーしない）
+      </label><br>
+      <label style="font-weight:normal;">
+        <input type="checkbox" name="f_tp" {{ 'checked' if form.f_tp else '' }}>
+        部分利確（+1Rで半分利確し、残りは建値ストップ）
+      </label><br>
+      <label style="font-weight:normal;">
+        <input type="checkbox" name="f_ml" {{ 'checked' if form.f_ml else '' }}>
+        ダマシAI（過去の取引で学習し、ニセのブレイクを除外）
+        <span class="muted">※対象期間より前のデータで学習するため「直近○年」で有効。全期間では学習不可</span>
+      </label>
+    </div>
     <button type="submit">実行する</button>
     <a href="{{ url_for('trading.overview') }}" class="link" style="margin-left:12px;">← 戻る</a>
   </form>
@@ -55,9 +72,30 @@
   <div class="card"><div class="flash error">{{ error }}</div></div>
 {% endif %}
 
+{% if compare %}
+<div class="card">
+  <h1>⚖️ 改良前 → 改良後の比較</h1>
+  <table>
+    <tr><th></th><th>改良前（ベースライン）</th><th>改良後（選択した改良）</th></tr>
+    <tr><th>取引数</th><td>{{ compare.base.num_trades }}</td><td>{{ compare.improved.num_trades }}</td></tr>
+    <tr><th>勝率</th><td>{{ "%.1f"|format(compare.base.win_rate*100) }}%</td>
+        <td>{{ "%.1f"|format(compare.improved.win_rate*100) }}%</td></tr>
+    <tr><th>合計R</th>
+        <td style="color:{{ '#2b8a3e' if compare.base.total_r>=0 else '#c92a2a' }};">{{ "%+.2f"|format(compare.base.total_r) }}</td>
+        <td style="color:{{ '#2b8a3e' if compare.improved.total_r>=0 else '#c92a2a' }};"><strong>{{ "%+.2f"|format(compare.improved.total_r) }}</strong></td></tr>
+    <tr><th>期待値(R/取引)</th><td>{{ "%.2f"|format(compare.base.expectancy_r) }}</td>
+        <td>{{ "%.2f"|format(compare.improved.expectancy_r) }}</td></tr>
+    <tr><th>最大DD(R)</th><td>{{ "%.2f"|format(compare.base.max_drawdown_r) }}</td>
+        <td>{{ "%.2f"|format(compare.improved.max_drawdown_r) }}</td></tr>
+  </table>
+  <p class="muted">合計Rが改良後の方が大きく（DDが浅く）なっていれば、その改良は有効です。
+    下の詳細は「改良後」の内訳です。</p>
+</div>
+{% endif %}
+
 {% if summary %}
 <div class="card">
-  <h1>結果（{{ form.instrument }} / スプレッド {{ form.spread_pips }}pips）</h1>
+  <h1>結果（{{ form.instrument }} / スプレッド {{ form.spread_pips }}pips{% if compare %} / 改良後{% endif %}）</h1>
   {% if data_from %}<p class="muted">対象期間: {{ data_from }} 〜 {{ data_to }}
     {% if source_used == 'hist' %}（取り込み済み長期データ）{% elif source_used == 'yahoo' %}（無料データ・中値）{% endif %}
   </p>{% endif %}
@@ -124,7 +162,9 @@
     <tr><th>② 上位足の方向が一致</th><td>{{ d.mtf_aligned }} 本</td></tr>
     <tr><th>③ さらにその向きへブレイク</th><td>{{ d.breakout }} 本</td></tr>
     <tr><th>④ さらに勢い(ATR)条件も通過</th><td>{{ d.atr_pass }} 本</td></tr>
-    <tr><th>⑤ さらに出来高も通過＝エントリー条件成立の信号</th><td>{{ d.entries }} 本</td></tr>
+    {% if d.range_filtered %}<tr><th>　→ レンジ回避で見送り</th><td>−{{ d.range_filtered }} 本</td></tr>{% endif %}
+    {% if d.ml_filtered %}<tr><th>　→ ダマシAIで見送り</th><td>−{{ d.ml_filtered }} 本</td></tr>{% endif %}
+    <tr><th>⑤ 残った＝エントリー条件成立の信号</th><td>{{ d.entries }} 本</td></tr>
     <tr><th>⑥ 実際に成立した取引<br><span class="muted">既にポジション保有中の信号は除外</span></th><td><strong>{{ summary.num_trades }} 件</strong></td></tr>
   </table>
   {% if summary.num_trades == 0 %}

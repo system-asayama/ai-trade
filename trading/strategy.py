@@ -64,43 +64,67 @@ def evaluate(
     trigger_df: pd.DataFrame,
     mtf: MTFView,
     settings: Settings,
+    fakeout_model: object = None,
 ) -> Signal:
-    """トリガー足(指標付与済み) + 上位足ビューから売買シグナルを評価する。"""
+    """トリガー足(指標付与済み) + 上位足ビューから売買シグナルを評価する。
+
+    fakeout_model を渡すと、全条件を満たした後に「ダマシ確率」で最終フィルタする
+    （成功確率が settings.fakeout_min_proba 未満なら見送り）。未学習/未指定なら無視。
+    """
     if trigger_df.empty:
         return Signal(SIGNAL_NONE)
 
     last = trigger_df.iloc[-1]
     atr_value = float(last.get("atr", 0.0) or 0.0)
+    adx_value = float(last.get("adx", 0.0) or 0.0)
     price = float(last["close"])
 
     # 1. 上位足の方向一致が無ければ何もしない
     if not mtf.is_aligned:
-        return Signal(SIGNAL_NONE, price, atr_value, {"mtf": "not_aligned"})
+        return Signal(SIGNAL_NONE, price, atr_value, {"stage": "mtf", "mtf": "not_aligned"})
 
     # 2. ブレイク方向
     brk = _breakout(trigger_df, settings.breakout_lookback)
     if brk is None or brk != mtf.aligned:
         return Signal(SIGNAL_NONE, price, atr_value,
-                      {"breakout": brk, "mtf": mtf.aligned})
+                      {"stage": "breakout", "breakout": brk, "mtf": mtf.aligned})
 
     # 3. ボラ確認: ATR の相対水準（過去比の百分位）
     atr_pct = _atr_percentile(trigger_df)
     if atr_pct is not None and atr_pct < settings.atr_min_pct:
-        return Signal(SIGNAL_NONE, price, atr_value, {"atr_pct": atr_pct})
+        return Signal(SIGNAL_NONE, price, atr_value, {"stage": "atr", "atr_pct": atr_pct})
 
     # 4. 出来高確認
     if not _volume_increasing(trigger_df, settings.volume_lookback):
-        return Signal(SIGNAL_NONE, price, atr_value, {"volume": "not_increasing"})
+        return Signal(SIGNAL_NONE, price, atr_value,
+                      {"stage": "volume", "volume": "not_increasing"})
+
+    # 5. レンジ回避: トリガー足のADX（トレンド強度）が弱すぎるなら見送り
+    if settings.entry_adx_min > 0 and adx_value < settings.entry_adx_min:
+        return Signal(SIGNAL_NONE, price, atr_value,
+                      {"stage": "regime", "regime_adx": adx_value, "min": settings.entry_adx_min})
 
     reason = {
+        "stage": "entry",
         "mtf": mtf.aligned,
         "mtf_states": mtf.states,
         "breakout": brk,
         "atr": atr_value,
         "atr_pct": atr_pct,
-        "adx": float(last.get("adx", 0.0) or 0.0),
+        "adx": adx_value,
         "volume_ratio": _volume_ratio(trigger_df, settings.volume_lookback),
     }
+
+    # 6. ダマシ予測ML（学習済みモデルがあれば最終フィルタ）
+    if fakeout_model is not None and getattr(fakeout_model, "is_trained", False):
+        from .ml import features_from_reason
+        proba = fakeout_model.predict_proba(features_from_reason(reason))
+        reason["fakeout_proba"] = round(float(proba), 4)
+        if proba < settings.fakeout_min_proba:
+            reason = dict(reason)
+            reason["stage"] = "fakeout"
+            return Signal(SIGNAL_NONE, price, atr_value, reason)
+
     side = SIGNAL_BUY if mtf.aligned == TREND_UP else SIGNAL_SELL
     return Signal(side, price, atr_value, reason)
 

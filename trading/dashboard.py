@@ -244,10 +244,11 @@ def hist_import_upload():
 def backtest_view():
     settings = Settings()
     return render_template(
-        "trading_backtest.html", settings=settings, result=None,
+        "trading_backtest.html", settings=settings, result=None, compare=None,
         hist=_hist_coverage(), periods=_BT_PERIODS,
         form={"instrument": settings.instruments[0], "period": "60d",
-              "spread_pips": 0.8, "slippage_pips": 0.2})
+              "spread_pips": 0.8, "slippage_pips": 0.2,
+              "f_adx": False, "f_tp": False, "f_ml": False})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -261,17 +262,33 @@ def backtest_run():
     if period_key not in _BT_PERIODS:
         period_key = "60d"
     preset = _BT_PERIODS[period_key]
+    # ロジック改良トグル
+    f_adx = request.form.get("f_adx") == "on"
+    f_tp = request.form.get("f_tp") == "on"
+    f_ml = request.form.get("f_ml") == "on"
+    improved = f_adx or f_tp or f_ml
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
         "period": period_key,
         "spread_pips": _fnum(request.form.get("spread_pips"), 0.8),
         "slippage_pips": _fnum(request.form.get("slippage_pips"), 0.2),
+        "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml,
     }
     error = result = summary = analytics = None
     equity = []
+    compare = None
     data_from = data_to = None
     source_used = None
     days = preset.get("days")
+
+    def _make_settings(with_improve):
+        s = Settings()
+        if with_improve:
+            if f_adx:
+                s.entry_adx_min = 22.0
+            if f_tp:
+                s.partial_tp_r = 1.0
+        return s
     try:
         inst = form["instrument"]
         # どの期間でも「取り込み済み全データで1回シミュレーション → 直近N日だけ集計」
@@ -308,19 +325,30 @@ def backtest_run():
                         count_from = cf
                 data_from = (count_from or df.index[0]).strftime("%Y-%m-%d")
                 data_to = df.index[-1].strftime("%Y-%m-%d")
-                bt = Backtester(settings, spread_pips=form["spread_pips"],
-                                slippage_pips=form["slippage_pips"])
-                result = bt.run(form["instrument"], df, count_from=count_from)
+
+                def _bt(s, use_ml):
+                    b = Backtester(s, spread_pips=form["spread_pips"],
+                                   slippage_pips=form["slippage_pips"])
+                    return b.run(form["instrument"], df, count_from=count_from,
+                                 fakeout_ml=use_ml)
+
+                # 選択された（改良込みの）構成で本実行
+                result = _bt(_make_settings(improved), f_ml and improved)
                 summary = result.summary()
                 analytics = result.analytics()
                 equity = _equity_curve(result)
+
+                # 改良を入れたときは「改良前（ベースライン）」も回して比較表示
+                if improved:
+                    base = _bt(_make_settings(False), False)
+                    compare = {"base": base.summary(), "improved": summary}
     except Exception as exc:  # noqa: BLE001
         error = f"バックテストに失敗しました: {exc}"
 
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
         periods=_BT_PERIODS, result=result, summary=summary, analytics=analytics,
-        equity=equity, error=error,
+        equity=equity, error=error, compare=compare,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 

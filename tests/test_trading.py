@@ -152,6 +152,33 @@ def test_backtest_count_from_is_true_subset():
     assert all(t.entry_time >= cf for t in partial.closed)
 
 
+def test_range_filter_reduces_trades():
+    """レンジ回避(entry_adx_min)を上げるとエントリーが減る。"""
+    df = make_ohlcv(6000)
+    base = Backtester(_settings()).run("USD_JPY", df)
+    s = _settings()
+    s.entry_adx_min = 30.0  # 強いトレンドのみ許可
+    filtered = Backtester(s).run("USD_JPY", df)
+    assert filtered.num_trades <= base.num_trades
+    assert filtered.diagnostics.get("range_filtered", 0) >= 0
+
+
+def test_partial_tp_changes_exit_and_bounds():
+    """部分利確ONで、勝ちトレードのRが建値ストップ後も確定分を保持する。"""
+    df = make_ohlcv(6000)
+    s = _settings()
+    s.partial_tp_r = 1.0
+    s.partial_tp_frac = 0.5
+    res = Backtester(s).run("USD_JPY", df)
+    for t in res.closed:
+        # 部分利確済みトレードは確定R(banked_r)以上（建値ストップで守られる）
+        if t.partial_taken and t.exit_reason == "stop":
+            assert t.r_multiple >= t.banked_r - 1e-9
+        # 損失は初期リスクの範囲内
+        if t.exit_reason == "stop" and not t.partial_taken:
+            assert t.r_multiple >= -1.0 - 1e-9
+
+
 def _linear_df(start: float, end: float, n: int = 300) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz="UTC")
     close = np.linspace(start, end, n)

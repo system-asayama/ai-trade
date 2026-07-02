@@ -93,6 +93,13 @@ class Settings:
     atr_trail_mult: float = field(default_factory=lambda: _float_env("ATR_TRAIL_MULT", 2.0))
     max_open_positions: int = field(default_factory=lambda: _int_env("MAX_OPEN_POSITIONS", 2))
 
+    # --- ロジック改良（既定は無効＝従来どおり。バックテストで個別にON） ---
+    # レンジ回避: トリガー足ADXがこの値未満ならエントリーしない（0=無効）
+    entry_adx_min: float = field(default_factory=lambda: _float_env("ENTRY_ADX_MIN", 0.0))
+    # 部分利確: +partial_tp_r R に到達したら partial_tp_frac 分を利確し残りは建値ストップ（0=無効）
+    partial_tp_r: float = field(default_factory=lambda: _float_env("PARTIAL_TP_R", 0.0))
+    partial_tp_frac: float = field(default_factory=lambda: _float_env("PARTIAL_TP_FRAC", 0.5))
+
     # --- Phase 5: ダマシ予測ML ---
     fakeout_min_proba: float = field(
         default_factory=lambda: _float_env("FAKEOUT_MIN_PROBA", 0.5)

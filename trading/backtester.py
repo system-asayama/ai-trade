@@ -35,6 +35,11 @@ class BacktestTrade:
     exit_reason: str = ""
     r_multiple: float = 0.0
     pnl_points: float = 0.0
+    entry_reason: Dict[str, object] = field(default_factory=dict)  # ML特徴量の素
+    # 部分利確の管理
+    banked_r: float = 0.0        # 部分利確で確定したR
+    remaining_frac: float = 1.0  # 残りポジション比率
+    partial_taken: bool = False
 
     @property
     def is_open(self) -> bool:
@@ -209,8 +214,26 @@ class Backtester:
         aligned = np.where(all_up, TREND_UP, np.where(all_down, TREND_DOWN, None))
         return gran_states, aligned
 
+    def _train_fakeout(self, result: BacktestResult):
+        """count_from より前に確定した取引だけで ダマシ予測モデルを学習する。
+
+        学習に使うのは評価期間より前の取引のみ（＝先読みなし）。サンプルが
+        少なすぎるときは学習せず None（フィルタ無効）。
+        """
+        from .ml import FakeoutModel, features_from_reason
+        X, y = [], []
+        for t in result.trades:
+            if t.is_open or not t.entry_reason:
+                continue
+            X.append(features_from_reason(t.entry_reason))
+            y.append(1.0 if t.r_multiple > 0 else 0.0)
+        if len(y) < 40 or len(set(y)) < 2:  # データ不足 or 片側だけ
+            return None
+        return FakeoutModel().fit(np.asarray(X), np.asarray(y))
+
     def run(self, instrument: str, trigger_df: pd.DataFrame,
-            count_from: Optional[pd.Timestamp] = None) -> BacktestResult:
+            count_from: Optional[pd.Timestamp] = None,
+            fakeout_ml: bool = False) -> BacktestResult:
         """トリガー足(生OHLCV)を与えてバックテストを実行する。
 
         上位足は trigger_df から settings.htf_granularities へリサンプルする。
@@ -237,12 +260,19 @@ class Backtester:
 
         # 「なぜエントリーしなかったか」を段階別に集計する
         diag = {
-            "bars": 0,          # 評価したバー数
-            "mtf_aligned": 0,   # 上位足の方向が一致していたバー
-            "breakout": 0,      # 方向一致 かつ その向きにブレイクしたバー
-            "atr_pass": 0,      # さらにATR（勢い）条件を満たしたバー
-            "entries": 0,       # 最終的にエントリーしたバー
+            "bars": 0,             # 評価したバー数
+            "mtf_aligned": 0,      # 上位足の方向が一致していたバー
+            "breakout": 0,         # 方向一致 かつ その向きにブレイクしたバー
+            "atr_pass": 0,         # さらにATR（勢い）条件を満たしたバー
+            "range_filtered": 0,   # レンジ回避フィルタで見送ったバー
+            "ml_filtered": 0,      # ダマシAIで見送ったバー
+            "entries": 0,          # 最終的にエントリー条件を満たした信号
         }
+        # ダマシAI用モデル（count_from を跨いだ時点で学習して以降に適用）
+        model = None
+        ml_trained = False
+        _PASSED_BREAKOUT = {"atr", "volume", "regime", "fakeout", "entry"}
+        _PASSED_ATR = {"volume", "regime", "fakeout", "entry"}
 
         # strategy.evaluate は直近の一定本数しか参照しないため、毎バー全履歴を
         # スライスせず「直近 window 本」だけ渡す（O(n^2)→O(n) に高速化）。
@@ -266,6 +296,11 @@ class Backtester:
             close_i = closes[i]
             counting = count_from is None or when >= count_from
 
+            # 評価期間に入る瞬間に、それ以前の取引だけでダマシAIを学習する
+            if fakeout_ml and not ml_trained and counting and count_from is not None:
+                model = self._train_fakeout(result)
+                ml_trained = True
+
             # --- 既存ポジションの管理（当該バーで先に決済判定） ---
             if position is not None:
                 position = self._manage_position(
@@ -285,16 +320,20 @@ class Backtester:
             slice_df = trigger.iloc[max(0, i - window + 1): i + 1]
             mtf = MTFView(states={g: gran_states[g][i] for g in gran_states},
                           aligned=aligned)
-            signal = strategy.evaluate(slice_df, mtf, settings)
+            signal = strategy.evaluate(slice_df, mtf, settings, fakeout_model=model)
 
             if counting:
-                rsn = signal.reason
-                if rsn.get("breakout") == aligned:
+                stage = signal.reason.get("stage")
+                if stage in _PASSED_BREAKOUT:
                     diag["breakout"] += 1
-                    if "volume" in rsn or signal.is_entry:
-                        diag["atr_pass"] += 1
-                    if signal.is_entry:
-                        diag["entries"] += 1
+                if stage in _PASSED_ATR:
+                    diag["atr_pass"] += 1
+                if stage == "regime":
+                    diag["range_filtered"] += 1
+                elif stage == "fakeout":
+                    diag["ml_filtered"] += 1
+                elif stage == "entry":
+                    diag["entries"] += 1
 
             if position is not None:
                 # 反対シグナルが出たらクローズ
@@ -335,15 +374,41 @@ class Backtester:
             entry_price=entry,
             stop=stop,
             initial_risk=abs(entry - stop),
+            entry_reason=dict(signal.reason) if signal.reason else {},
         )
+
+    def _try_partial_tp(self, pos: BacktestTrade, high, low) -> None:
+        """+partial_tp_r R に到達したら一部利確し、残りは建値ストップにする。"""
+        s = self.settings
+        if s.partial_tp_r <= 0 or pos.partial_taken or pos.initial_risk <= 0:
+            return
+        target_dist = s.partial_tp_r * pos.initial_risk
+        cost = self._cost()
+        if pos.side == SIGNAL_BUY:
+            target = pos.entry_price + target_dist
+            if high >= target:
+                leg_r = (target - cost - pos.entry_price) / pos.initial_risk
+                pos.banked_r += s.partial_tp_frac * leg_r
+                pos.remaining_frac = 1.0 - s.partial_tp_frac
+                pos.partial_taken = True
+                pos.stop = max(pos.stop, pos.entry_price)  # 建値へ
+        else:  # SELL
+            target = pos.entry_price - target_dist
+            if low <= target:
+                leg_r = (pos.entry_price - (target + cost)) / pos.initial_risk
+                pos.banked_r += s.partial_tp_frac * leg_r
+                pos.remaining_frac = 1.0 - s.partial_tp_frac
+                pos.partial_taken = True
+                pos.stop = min(pos.stop, pos.entry_price)
 
     def _manage_position(self, pos: BacktestTrade, high, low, close, atr_value,
                          when, result) -> Optional[BacktestTrade]:
-        """ストップ判定 → トレーリング更新。決済したら None を返す。"""
+        """ストップ判定 → 部分利確 → トレーリング更新。決済したら None を返す。"""
         if pos.side == SIGNAL_BUY:
-            if low <= pos.stop:  # ストップ約定
+            if low <= pos.stop:  # ストップ約定（保守的に先に判定）
                 self._close(pos, when, pos.stop, "stop", result)
                 return None
+            self._try_partial_tp(pos, high, low)
             # トレーリング（建値方向にのみ引き上げ）
             new_stop = close - self.settings.atr_trail_mult * atr_value
             pos.stop = max(pos.stop, float(new_stop))
@@ -351,6 +416,7 @@ class Backtester:
             if high >= pos.stop:
                 self._close(pos, when, pos.stop, "stop", result)
                 return None
+            self._try_partial_tp(pos, high, low)
             new_stop = close + self.settings.atr_trail_mult * atr_value
             pos.stop = min(pos.stop, float(new_stop))
         return pos
@@ -367,7 +433,9 @@ class Backtester:
         pos.exit_time = when
         pos.exit_price = exit_price
         pos.exit_reason = reason
-        # R倍数はエントリー時の初期リスク幅で正規化（トレーリング後のストップではない）
+        # R倍数はエントリー時の初期リスク幅で正規化（トレーリング後のストップではない）。
+        # 部分利確済みなら「確定分 + 残り比率×残りレッグのR」で合成する。
         risk = pos.initial_risk
-        pos.r_multiple = pos.pnl_points / risk if risk > 0 else 0.0
+        leg_r = pos.pnl_points / risk if risk > 0 else 0.0
+        pos.r_multiple = pos.banked_r + pos.remaining_frac * leg_r
         result.trades.append(pos)
