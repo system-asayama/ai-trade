@@ -12,10 +12,15 @@
   <form method="post" action="{{ url_for('trading.backtest_run') }}">
     <label>通貨ペア</label>
     <select name="instrument">
-      {% for inst in settings.instruments %}
+      <option value="__ALL__" {{ 'selected' if form.instrument == '__ALL__' else '' }}>🌐 全ペア合算（分散効果を見る）</option>
+      {% for inst in instruments %}
         <option value="{{ inst }}" {{ 'selected' if form.instrument == inst else '' }}>{{ inst }}</option>
       {% endfor %}
     </select>
+    <p class="muted" style="margin:2px 0 6px;">
+      「全ペア合算」は取り込み済みの全通貨ペアで同時に検証し、資産曲線を合算します。
+      値動きの異なるペアに分散すると凸凹が打ち消し合い、なめらかになります。
+    </p>
     <label>集計期間（直近◯◯）</label>
     <p class="muted" style="margin:2px 0 6px;">
       どの期間でも取り込み済みの全データで一度シミュレーションし、直近の指定期間だけを集計します。
@@ -124,6 +129,38 @@
   <p class="muted">R は「1回の想定リスク」を1とした単位です。合計Rがプラスなら、
   この期間・条件では有利だったことを示します（将来を保証しません）。</p>
 </div>
+
+{% if per_pair %}
+<div class="card">
+  <h1>🌐 通貨ペア別の内訳（合算）</h1>
+  <p class="muted">「リターン/DD比」＝合計R÷最大DD。大きいほど「落ち込みの割に稼げる」＝効率が良い。
+    分散の効果は、<strong>合算のこの比が各ペアの平均より良くなる</strong>ことで表れます
+    （1つがダメでも他が支えるため）。合計R自体はペア数ぶん積み上がるので大小比較は無意味です。</p>
+  <table>
+    <tr><th>ペア</th><th>取引数</th><th>勝率</th><th>合計R</th><th>最大DD(R)</th><th>リターン/DD比</th></tr>
+    {% for p in per_pair %}
+    <tr>
+      <td>{{ p.instrument }}</td>
+      <td>{{ p.num_trades }}</td>
+      <td>{{ "%.1f"|format(p.win_rate * 100) }}%</td>
+      <td style="color:{{ '#2b8a3e' if p.total_r >= 0 else '#c92a2a' }};">{{ "%+.2f"|format(p.total_r) }}</td>
+      <td>{{ "%.2f"|format(p.max_drawdown_r) }}</td>
+      <td>{{ "%.2f"|format(p.total_r / (-p.max_drawdown_r)) if p.max_drawdown_r < 0 else '—' }}</td>
+    </tr>
+    {% endfor %}
+    {% if summary.max_drawdown_r < 0 %}
+    <tr style="border-top:2px solid #adb5bd;font-weight:bold;">
+      <td>🌐 合算</td>
+      <td>{{ summary.num_trades }}</td>
+      <td>{{ "%.1f"|format(summary.win_rate * 100) }}%</td>
+      <td style="color:{{ '#2b8a3e' if summary.total_r >= 0 else '#c92a2a' }};">{{ "%+.2f"|format(summary.total_r) }}</td>
+      <td>{{ "%.2f"|format(summary.max_drawdown_r) }}</td>
+      <td>{{ "%.2f"|format(summary.total_r / (-summary.max_drawdown_r)) }}</td>
+    </tr>
+    {% endif %}
+  </table>
+</div>
+{% endif %}
 
 {% if diagnosis %}
 <div class="card">

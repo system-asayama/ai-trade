@@ -35,7 +35,7 @@
   <form method="post" action="{{ url_for('trading.hist_import_auto') }}">
     <label>通貨ペア</label>
     <select name="instrument">
-      {% for inst in settings.instruments %}
+      {% for inst in instruments %}
         <option value="{{ inst }}">{{ inst }}</option>
       {% endfor %}
     </select>
@@ -55,7 +55,7 @@
   <form method="post" action="{{ url_for('trading.hist_import_upload') }}" enctype="multipart/form-data">
     <label>通貨ペア</label>
     <select name="instrument">
-      {% for inst in settings.instruments %}
+      {% for inst in instruments %}
         <option value="{{ inst }}">{{ inst }}</option>
       {% endfor %}
     </select>

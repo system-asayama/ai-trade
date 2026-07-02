@@ -123,6 +123,13 @@ _BT_PERIODS = {
     "all": {"label": "全期間（取り込み済みすべて）", "days": None},
 }
 
+# バックテスト/取り込みで選べる通貨ペア（HistData 提供の主要ペア）。
+# 値動きの異なる複数ペアに分散すると資産曲線がなめらかになる（分散効果）。
+_BT_INSTRUMENTS = [
+    "USD_JPY", "EUR_USD", "GBP_USD", "EUR_JPY", "GBP_JPY",
+    "AUD_USD", "USD_CHF", "USD_CAD", "NZD_USD", "AUD_JPY", "EUR_GBP",
+]
+
 
 def _hist_coverage():
     """取り込み済みの長期データがある通貨ペアと期間を返す。"""
@@ -143,7 +150,8 @@ def _hist_coverage():
 @_login_required
 def hist_import_view():
     return render_template("trading_import.html", hist=_hist_coverage(),
-                          settings=Settings(), status=_read_status())
+                          settings=Settings(), instruments=_BT_INSTRUMENTS,
+                          status=_read_status())
 
 
 def _status_path():
@@ -245,8 +253,9 @@ def backtest_view():
     settings = Settings()
     return render_template(
         "trading_backtest.html", settings=settings, result=None, compare=None,
-        hist=_hist_coverage(), periods=_BT_PERIODS,
-        form={"instrument": settings.instruments[0], "period": "60d",
+        hist=_hist_coverage(), periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS,
+        per_pair=None,
+        form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_adx": False,
               "f_tp": False, "f_ml": False, "trail_mult": 3.0})
@@ -298,68 +307,108 @@ def backtest_run():
             if f_tp:
                 s.partial_tp_r = 1.0
         return s
+    per_pair = None
     try:
+        from .backtester import BacktestResult, diagnose
         inst = form["instrument"]
-        # どの期間でも「取り込み済み全データで1回シミュレーション → 直近N日だけ集計」
-        # する。全期間で指標を暖機したうえで期間を切り出すので、短い期間は必ず
-        # 長い期間の一部分になり、成績が食い違わない（暖機不足の幻の取引を排除）。
-        has_hist = inst in _hist_coverage()
-        candles = []
-        if has_hist:
-            from .histdata import HistStore
-            candles = HistStore().load_candles(inst, "M15", limit=None)  # 全部
-            if candles:
-                source_used = "hist"
-        if not candles:
-            if days is not None and days <= 60:
+        cov = _hist_coverage()
+
+        # どの期間でも「全データで1回シミュレーション → 直近N日だけ集計」する。
+        # 全期間で指標を暖機してから切り出すので、短い期間は必ず長い期間の一部分になる。
+        def _load_df(pair):
+            """(df, source) を返す。データが無ければ (None, None)。"""
+            cands = []
+            src = None
+            if pair in cov:
+                from .histdata import HistStore
+                cands = HistStore().load_candles(pair, "M15", limit=None)
+                if cands:
+                    src = "hist"
+            if not cands and days is not None and days <= 60:
                 from .market_data import YahooMarketData
-                candles = YahooMarketData().get_candles(
-                    inst, settings.trigger_granularity,
-                    count=5000, range_override="60d")
-                source_used = "yahoo"
+                cands = YahooMarketData().get_candles(
+                    pair, settings.trigger_granularity, count=5000, range_override="60d")
+                if cands:
+                    src = "yahoo"
+            if not cands:
+                return None, None
+            d = candles_to_df(cands)
+            if len(d) < max(settings.ema_slow, 60):
+                return None, None
+            return d, src
+
+        def _cf(d):
+            if days is None:
+                return None
+            c = d.index[-1] - pd.Timedelta(days=days)
+            return c if c > d.index[0] else None
+
+        def _run(pair, s, use_ml, d, cf):
+            b = Backtester(s, spread_pips=form["spread_pips"],
+                           slippage_pips=form["slippage_pips"])
+            return b.run(pair, d, count_from=cf, fakeout_ml=use_ml)
+
+        if inst == "__ALL__":
+            # --- 全ペア合算（分散効果を見る） ---
+            pairs = [p for p in _BT_INSTRUMENTS if p in cov]
+            if not pairs:
+                error = ("合算するには長期データを取り込んだ通貨ペアが必要です。"
+                         "「追加で取り込む」から複数ペアを取り込んでください。")
             else:
+                combo = BacktestResult(instrument="ALL")
+                per_pair = []
+                froms, tos = [], []
+                for p in pairs:
+                    d, _src = _load_df(p)
+                    if d is None:
+                        continue
+                    cf = _cf(d)
+                    r = _run(p, _make_settings(improved), f_ml and improved, d, cf)
+                    combo.trades.extend(r.closed)
+                    per_pair.append({"instrument": p, **r.summary()})
+                    froms.append(cf or d.index[0])
+                    tos.append(d.index[-1])
+                if not combo.trades:
+                    error = "合算対象の取引がありませんでした（データ不足かもしれません）。"
+                else:
+                    combo.trades.sort(key=lambda t: t.exit_time)
+                    result = combo
+                    source_used = "hist"
+                    summary = combo.summary()
+                    analytics = combo.analytics()
+                    diagnosis = diagnose(summary, analytics)
+                    equity = _equity_curve(combo)
+                    per_pair.sort(key=lambda x: x["total_r"], reverse=True)
+                    data_from = min(froms).strftime("%Y-%m-%d")
+                    data_to = max(tos).strftime("%Y-%m-%d")
+        else:
+            # --- 単一ペア ---
+            df, src = _load_df(inst)
+            if df is None:
                 error = ("この通貨ペアの長期データが未取り込みです。"
                          "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
-
-        if error is None:
-            df = candles_to_df(candles)
-            if len(df) < max(settings.ema_slow, 60):
-                error = "過去データが不足しています（別の通貨ペア/期間をお試しください）。"
             else:
-                # 集計開始（直近N日）。全データがN日に満たなければ全体を使う。
-                count_from = None
-                if days is not None:
-                    cf = df.index[-1] - pd.Timedelta(days=days)
-                    if cf > df.index[0]:
-                        count_from = cf
+                source_used = src
+                count_from = _cf(df)
                 data_from = (count_from or df.index[0]).strftime("%Y-%m-%d")
                 data_to = df.index[-1].strftime("%Y-%m-%d")
-
-                def _bt(s, use_ml):
-                    b = Backtester(s, spread_pips=form["spread_pips"],
-                                   slippage_pips=form["slippage_pips"])
-                    return b.run(form["instrument"], df, count_from=count_from,
-                                 fakeout_ml=use_ml)
-
-                # 選択された（改良込みの）構成で本実行
-                result = _bt(_make_settings(improved), f_ml and improved)
+                result = _run(inst, _make_settings(improved), f_ml and improved,
+                              df, count_from)
                 summary = result.summary()
                 analytics = result.analytics()
-                from .backtester import diagnose
                 diagnosis = diagnose(summary, analytics)
                 equity = _equity_curve(result)
-
-                # 改良を入れたときは「改良前（ベースライン）」も回して比較表示
                 if improved:
-                    base = _bt(_make_settings(False), False)
+                    base = _run(inst, _make_settings(False), False, df, count_from)
                     compare = {"base": base.summary(), "improved": summary}
     except Exception as exc:  # noqa: BLE001
         error = f"バックテストに失敗しました: {exc}"
 
     return render_template(
         "trading_backtest.html", settings=settings, form=form, hist=_hist_coverage(),
-        periods=_BT_PERIODS, result=result, summary=summary, analytics=analytics,
-        diagnosis=diagnosis, equity=equity, error=error, compare=compare,
+        periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS, result=result,
+        summary=summary, analytics=analytics, diagnosis=diagnosis, equity=equity,
+        error=error, compare=compare, per_pair=per_pair,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 
