@@ -332,12 +332,13 @@ def backtest_view():
     return render_template(
         "trading_backtest.html", settings=settings, result=None, compare=None,
         hist=_hist_coverage(), periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS,
-        per_pair=None, selected_pairs=None, oos=None,
+        per_pair=None, selected_pairs=None, oos=None, filter_compare=None,
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_strong": False,
               "f_retest": False, "f_rangeok": False, "f_rangestop": False,
-              "f_adx": False, "f_tp": False, "f_ml": False, "trail_mult": 3.0})
+              "f_adx": False, "f_tp": False, "f_ml": False, "trail_mult": 3.0,
+              "compare_filters": False})
 
 
 @trading_bp.route("/backtest", methods=["POST"])
@@ -361,6 +362,7 @@ def backtest_run():
     f_adx = request.form.get("f_adx") == "on"
     f_tp = request.form.get("f_tp") == "on"
     f_ml = request.form.get("f_ml") == "on"
+    compare_filters = request.form.get("compare_filters") == "on"
     improved = (f_htf2 or f_trail or f_strong or f_retest or f_rangeok
                 or f_rangestop or f_adx or f_tp or f_ml)
     trail_mult = _fnum(request.form.get("trail_mult"), 3.0)
@@ -373,11 +375,13 @@ def backtest_run():
         "f_htf2": f_htf2, "f_trail": f_trail, "f_strong": f_strong,
         "f_retest": f_retest, "f_rangeok": f_rangeok, "f_rangestop": f_rangestop,
         "f_adx": f_adx, "f_tp": f_tp, "f_ml": f_ml, "trail_mult": trail_mult,
+        "compare_filters": compare_filters,
     }
     error = result = summary = analytics = diagnosis = None
     equity = []
     compare = None
     oos = None
+    filter_compare = None
     data_from = data_to = None
     source_used = None
     days = preset.get("days")
@@ -443,7 +447,50 @@ def backtest_run():
                            slippage_pips=form["slippage_pips"])
             return b.run(pair, d, count_from=cf, fakeout_ml=use_ml)
 
-        if inst == "__ALL__":
+        if compare_filters and inst != "__ALL__":
+            # --- フィルタ組み合わせの自動比較（目視での当てっこをやめる） ---
+            df, src = _load_df(inst)
+            if df is None:
+                error = "この通貨ペアのデータがありません。取り込むか期間を変えてください。"
+            else:
+                source_used = src
+                cf = _cf(df)
+                data_from = (cf or df.index[0]).strftime("%Y-%m-%d")
+                data_to = df.index[-1].strftime("%Y-%m-%d")
+                base = {"htf_granularities": ["H4", "D"], "atr_trail_mult": 3.0}
+
+                def _mk(**kw):
+                    s = Settings()
+                    for k, v in kw.items():
+                        setattr(s, k, v)
+                    return s
+
+                matrix = [
+                    ("改良なし（素の状態）", {}),
+                    ("エントリー増やすのみ", {"htf_granularities": ["H4", "D"]}),
+                    ("利を伸ばすのみ", {"atr_trail_mult": 3.0}),
+                    ("増やす＋利伸ばす", dict(base)),
+                    ("＋本物のレンジのみ", {**base, "range_confirm": True}),
+                    ("＋リテスト入場", {**base, "retest_entry": True}),
+                    ("＋強いブレイク", {**base, "breakout_body_min": 0.4}),
+                    ("＋レンジ回避", {**base, "entry_adx_min": 22.0}),
+                    ("＋部分利確", {**base, "partial_tp_r": 1.0}),
+                    ("全部入り", {**base, "range_confirm": True, "retest_entry": True,
+                                 "breakout_body_min": 0.4, "entry_adx_min": 22.0}),
+                ]
+                filter_compare = []
+                for label, kw in matrix:
+                    r = _run(inst, _mk(**kw), False, df, cf)
+                    su = r.summary()
+                    a = r.analytics()
+                    o = _oos_split(r.closed, cf or df.index[0], df.index[-1])
+                    filter_compare.append({
+                        "label": label, "num_trades": su["num_trades"],
+                        "win_rate": su["win_rate"], "total_r": su["total_r"],
+                        "max_dd": su["max_drawdown_r"], "pf": a["profit_factor"],
+                        "oos2": (o["second"]["total_r"] if o else None)})
+                filter_compare.sort(key=lambda x: x["total_r"], reverse=True)
+        elif inst == "__ALL__":
             # --- 全ペア合算（分散効果を見る） ---
             pairs = [p for p in _BT_INSTRUMENTS if p in cov]
             if selected_pairs:  # 明示的に選ばれたペアだけに絞る
@@ -508,7 +555,7 @@ def backtest_run():
         periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS, result=result,
         summary=summary, analytics=analytics, diagnosis=diagnosis, equity=equity,
         error=error, compare=compare, per_pair=per_pair, oos=oos,
-        selected_pairs=selected_pairs,
+        filter_compare=filter_compare, selected_pairs=selected_pairs,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 

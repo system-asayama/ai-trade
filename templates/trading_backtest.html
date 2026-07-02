@@ -81,13 +81,13 @@
       </label><br>
       <label style="font-weight:normal;">
         <input type="checkbox" name="f_rangeok" {{ 'checked' if form.f_rangeok else '' }}>
-        <strong>本物のレンジのみ（おすすめ）</strong>：上限・下限を複数回タッチした横ばい相場からの
-        ブレイクだけを採用（ただのチャネル抜け／トレンド中の高値更新を除外）。
+        本物のレンジのみ：上限・下限を複数回タッチした横ばい相場からの
+        ブレイクだけを採用（理屈は良いが、ペアによっては取引が減り不利になることも）。
       </label><br>
       <label style="font-weight:normal;">
         <input type="checkbox" name="f_retest" {{ 'checked' if form.f_retest else '' }}>
-        <strong>リテスト入場（おすすめ）</strong>：ブレイクを追いかけず、抜けた水準への押し戻りを待って入る。
-        ダマシは押し戻りが成立しないので構造的に除外され、約定も水準近くで有利。
+        リテスト入場：ブレイクを追いかけず、抜けた水準への押し戻りを待って入る
+        （ダマシに強いが、取引が大きく減り不利になることも。要A/B）。
       </label><br>
       <label style="font-weight:normal;">
         <input type="checkbox" name="f_rangestop" {{ 'checked' if form.f_rangestop else '' }}>
@@ -112,6 +112,12 @@
         <span class="muted">※対象期間より前のデータで学習するため「直近○年」で有効。全期間では学習不可</span>
       </label>
     </div>
+    <label style="font-weight:normal; display:block; margin:10px 0; padding:8px;
+                  background:#fff3bf; border-radius:8px;">
+      <input type="checkbox" name="compare_filters" {{ 'checked' if form.compare_filters else '' }}>
+      🔬 <strong>フィルタ組み合わせを自動比較する</strong>（ONにすると上のチェックは無視して、
+      主要な組み合わせを一括検証し「合計R順」でランキング表示。単一ペアのみ）
+    </label>
     <button type="submit">実行する</button>
     <a href="{{ url_for('trading.overview') }}" class="link" style="margin-left:12px;">← 戻る</a>
   </form>
@@ -119,6 +125,30 @@
 
 {% if error %}
   <div class="card"><div class="flash error">{{ error }}</div></div>
+{% endif %}
+
+{% if filter_compare %}
+<div class="card" style="border:2px solid #e8590c;">
+  <h1>🔬 フィルタ組み合わせ比較（{{ form.instrument }} / {{ data_from }}〜{{ data_to }}）</h1>
+  <p class="muted">同じ期間で主要な組み合わせを一括検証し、合計R順に並べました。
+    <strong>合計Rが大きく、かつ「後半R（未知期間相当）」もプラス</strong>のものが本命です。
+    フィルタを足すほど良くなるとは限りません（このロジックは少数の大勝ちで稼ぐため、絞りすぎると逆効果）。</p>
+  <table>
+    <tr><th>構成</th><th>取引</th><th>勝率</th><th>合計R</th><th>PF</th><th>最大DD</th><th>後半R</th></tr>
+    {% for c in filter_compare %}
+    <tr>
+      <td>{{ c.label }}</td>
+      <td>{{ c.num_trades }}</td>
+      <td>{{ "%.0f"|format(c.win_rate*100) }}%</td>
+      <td style="color:{{ '#2b8a3e' if c.total_r>=0 else '#c92a2a' }};"><strong>{{ "%+.1f"|format(c.total_r) }}</strong></td>
+      <td>{{ "%.2f"|format(c.pf) }}</td>
+      <td>{{ "%.1f"|format(c.max_dd) }}</td>
+      <td>{% if c.oos2 is not none %}<span style="color:{{ '#2b8a3e' if c.oos2>=0 else '#c92a2a' }};">{{ "%+.1f"|format(c.oos2) }}</span>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">「後半R」＝期間の後半だけの合計R（過学習チェック）。合計Rが1位でも後半がマイナスなら過去最適化を疑う。</p>
+</div>
 {% endif %}
 
 {% if compare %}
