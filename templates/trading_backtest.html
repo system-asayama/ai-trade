@@ -50,6 +50,10 @@
     <label>ロジック改良（ONにすると「改良前→改良後」を並べて比較します）</label>
     <div style="margin:4px 0 10px; line-height:1.9;">
       <label style="font-weight:normal;">
+        <input type="checkbox" name="f_htf2" {{ 'checked' if form.f_htf2 else '' }}>
+        エントリーを増やす（上位足の一致を H1・H4・日足 → H4・日足 の2つに緩める）
+      </label><br>
+      <label style="font-weight:normal;">
         <input type="checkbox" name="f_trail" {{ 'checked' if form.f_trail else '' }}>
         利を伸ばす（トレーリングを緩める：2.0→3.0 ATR。早すぎる利食いを防ぐ）
       </label><br>
