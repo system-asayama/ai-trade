@@ -288,6 +288,32 @@ def test_diagnose_flags_losing_low_payoff():
     assert any("利小損大" in f["text"] for f in findings)
 
 
+def test_range_strategy_modes_geometry():
+    """ユーザー手法エンジン: 上昇相場では両モードとも買い・1:1で決済される。"""
+    from trading.range_strategy import (MODE_BREAKOUT, MODE_PULLBACK,
+                                        run_range_strategy)
+    n = 20000
+    idx = pd.date_range("2023-01-02", periods=n, freq="5min", tz="UTC")
+    rng = np.random.default_rng(0)
+    close = 100.0 + np.cumsum(rng.normal(0.003, 0.05, n))  # 上昇ドリフト
+    df = pd.DataFrame({"open": close, "high": close + np.abs(rng.normal(0, 0.04, n)),
+                       "low": close - np.abs(rng.normal(0, 0.04, n)),
+                       "close": close, "volume": 100.0}, index=idx)
+    df["high"] = df[["high", "open", "close"]].max(axis=1)
+    df["low"] = df[["low", "open", "close"]].min(axis=1)
+    for mode in (MODE_BREAKOUT, MODE_PULLBACK):
+        r = run_range_strategy("USD_JPY", df, _settings(), mode=mode,
+                               spread_pips=0.8, slippage_pips=0.2)
+        assert r.num_trades >= 1
+        assert {t.side for t in r.closed} == {strategy.SIGNAL_BUY}  # 上昇→買いのみ
+        assert {t.exit_reason for t in r.closed} <= {"take_profit", "stop", "end_of_data"}
+        for t in r.closed:
+            if t.exit_reason == "take_profit":
+                assert 0.7 <= t.r_multiple <= 1.05   # 1:1（コスト分だけ小）
+            elif t.exit_reason == "stop":
+                assert -1.15 <= t.r_multiple <= 0.0
+
+
 def _linear_df(start: float, end: float, n: int = 300) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz="UTC")
     close = np.linspace(start, end, n)

@@ -155,12 +155,19 @@ class HistStore:
 # --- 取り込み ---------------------------------------------------------------
 def import_m1_bytes(store: HistStore, instrument: str, data: bytes,
                     is_zip: bool = True) -> int:
-    """M1 の ZIP/CSV バイト列を取り込み、M15 に集約して保存。保存件数を返す。"""
+    """M1 の ZIP/CSV バイト列を取り込み、M15 と M5 に集約して保存。
+
+    戻り値は M15 の保存件数（従来互換）。M5 はレンジ手法(5分足)用に併せて保存する。
+    """
     df_m1 = parse_zip_bytes(data) if is_zip else parse_m1_text(data.decode("utf-8", "ignore"))
-    m15 = to_m15(df_m1)
-    if m15.empty:
+    if df_m1.empty:
         return 0
-    return store.import_df(instrument, "M15", m15)
+    m15 = to_m15(df_m1)
+    m5 = resample_ohlcv(df_m1, "M5")
+    n15 = store.import_df(instrument, "M15", m15) if not m15.empty else 0
+    if not m5.empty:
+        store.import_df(instrument, "M5", m5)
+    return n15
 
 
 def _download(referer: str, session: Any) -> bytes:
