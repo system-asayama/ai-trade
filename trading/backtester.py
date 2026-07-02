@@ -164,10 +164,16 @@ class Backtester:
         aligned = np.where(all_up, TREND_UP, np.where(all_down, TREND_DOWN, None))
         return gran_states, aligned
 
-    def run(self, instrument: str, trigger_df: pd.DataFrame) -> BacktestResult:
+    def run(self, instrument: str, trigger_df: pd.DataFrame,
+            count_from: Optional[pd.Timestamp] = None) -> BacktestResult:
         """トリガー足(生OHLCV)を与えてバックテストを実行する。
 
         上位足は trigger_df から settings.htf_granularities へリサンプルする。
+
+        count_from を指定すると、シミュレーション自体は全期間で行う（＝指標を
+        十分に暖機する）が、集計・取引記録は count_from 以降のエントリーだけに
+        限定する。これにより「短い期間は長い期間の一部分」という関係が必ず成り立ち、
+        期間の切り出し方で成績が食い違うのを防ぐ（暖機不足による幻の取引を排除）。
         """
         settings = self.settings
         result = BacktestResult(instrument=instrument)
@@ -213,19 +219,22 @@ class Backtester:
         for i in range(warmup, len(trigger)):
             when = tindex[i]
             close_i = closes[i]
+            counting = count_from is None or when >= count_from
 
             # --- 既存ポジションの管理（当該バーで先に決済判定） ---
             if position is not None:
                 position = self._manage_position(
                     position, highs[i], lows[i], close_i, atrs[i], when, result)
 
-            diag["bars"] += 1
+            if counting:
+                diag["bars"] += 1
 
             # --- 上位足がそろっていなければ評価不要（evaluate は NONE 確定） ---
             aligned = aligned_arr[i]
             if aligned is None:
                 continue
-            diag["mtf_aligned"] += 1
+            if counting:
+                diag["mtf_aligned"] += 1
 
             # そろったバーだけ直近 window 本をスライスして本評価
             slice_df = trigger.iloc[max(0, i - window + 1): i + 1]
@@ -233,13 +242,14 @@ class Backtester:
                           aligned=aligned)
             signal = strategy.evaluate(slice_df, mtf, settings)
 
-            rsn = signal.reason
-            if rsn.get("breakout") == aligned:
-                diag["breakout"] += 1
-                if "volume" in rsn or signal.is_entry:
-                    diag["atr_pass"] += 1
-                if signal.is_entry:
-                    diag["entries"] += 1
+            if counting:
+                rsn = signal.reason
+                if rsn.get("breakout") == aligned:
+                    diag["breakout"] += 1
+                    if "volume" in rsn or signal.is_entry:
+                        diag["atr_pass"] += 1
+                    if signal.is_entry:
+                        diag["entries"] += 1
 
             if position is not None:
                 # 反対シグナルが出たらクローズ
@@ -253,6 +263,10 @@ class Backtester:
         # 最終バーで残ポジは終値クローズ
         if position is not None:
             self._close(position, tindex[-1], closes[-1], "end_of_data", result)
+
+        # 集計期間より前に建てた取引（＝暖機用）は成績に含めない
+        if count_from is not None:
+            result.trades = [t for t in result.trades if t.entry_time >= count_from]
 
         result.diagnostics = diag
         return result

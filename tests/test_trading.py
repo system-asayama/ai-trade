@@ -131,6 +131,27 @@ def test_backtest_costs_reduce_performance():
     assert costly < base
 
 
+def test_backtest_count_from_is_true_subset():
+    """count_from を指定した短い期間は、全期間runの同じ区間と完全一致する。
+
+    暖機を全期間で行ってから区間を切り出すため、「短い期間は長い期間の
+    一部分」という関係が必ず成り立つ（期間の切り方で成績が食い違わない）。
+    """
+    settings = _settings()
+    df = make_ohlcv(8000)
+    cf = df.index[len(df) // 2]  # 後半だけ集計
+    bt = Backtester(settings)
+
+    full = bt.run("USD_JPY", df)                     # 全期間で集計
+    partial = bt.run("USD_JPY", df, count_from=cf)   # 後半だけ集計
+
+    full_late = [t for t in full.closed if t.entry_time >= cf]
+    assert len(partial.closed) == len(full_late)
+    assert abs(partial.total_r - sum(t.r_multiple for t in full_late)) < 1e-9
+    # count_from 以降のみが記録されている
+    assert all(t.entry_time >= cf for t in partial.closed)
+
+
 def _linear_df(start: float, end: float, n: int = 300) -> pd.DataFrame:
     idx = pd.date_range("2024-01-01", periods=n, freq="15min", tz="UTC")
     close = np.linspace(start, end, n)

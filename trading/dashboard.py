@@ -16,6 +16,8 @@ import os
 import threading
 from functools import wraps
 
+import pandas as pd
+
 from flask import (
     Blueprint,
     flash,
@@ -108,13 +110,17 @@ def _current_user_id():
 
 # バックテストの期間プリセット。長い期間ほど計算に時間がかかるため、
 # 短い期間を選べばタイムアウトを確実に避けられる（M15は約25000本/年）。
+# days: 集計する期間（直近N日）。None は取り込み済み全期間。
+# どの期間でも「全データで1回シミュレーション → 直近N日だけ集計」するため、
+# 短い期間は必ず長い期間の一部分になり、成績が食い違わない。
 _BT_PERIODS = {
-    "60d": {"label": "直近60日（すぐ）", "source": "yahoo", "bars": 4200},
-    "3m": {"label": "長期3ヶ月（取り込み済み・約数秒）", "source": "hist", "bars": 6250},
-    "6m": {"label": "長期6ヶ月（取り込み済み）", "source": "hist", "bars": 12500},
-    "1y": {"label": "長期1年（取り込み済み・約10秒）", "source": "hist", "bars": 25000},
-    "2y": {"label": "長期2年（取り込み済み・約15秒）", "source": "hist", "bars": 50000},
-    "4y": {"label": "長期4年（取り込み済み・約30秒）", "source": "hist", "bars": 100000},
+    "60d": {"label": "直近60日", "days": 60},
+    "3m": {"label": "直近3ヶ月", "days": 90},
+    "6m": {"label": "直近6ヶ月", "days": 180},
+    "1y": {"label": "直近1年", "days": 365},
+    "2y": {"label": "直近2年", "days": 730},
+    "4y": {"label": "直近4年", "days": 1460},
+    "all": {"label": "全期間（取り込み済みすべて）", "days": None},
 }
 
 
@@ -265,41 +271,46 @@ def backtest_run():
     equity = []
     data_from = data_to = None
     source_used = None
+    days = preset.get("days")
     try:
         inst = form["instrument"]
-        # 取り込み済み長期データがあれば、短期(60日)も同じデータから切り出す。
-        # こうすると「短期は長期の一部分」という関係が必ず成り立ち、
-        # 短期に出た取引が長期に出ない、という食い違いが起きない。
+        # どの期間でも「取り込み済み全データで1回シミュレーション → 直近N日だけ集計」
+        # する。全期間で指標を暖機したうえで期間を切り出すので、短い期間は必ず
+        # 長い期間の一部分になり、成績が食い違わない（暖機不足の幻の取引を排除）。
         has_hist = inst in _hist_coverage()
-        prefer_hist = preset["source"] == "hist" or has_hist
         candles = []
-        if prefer_hist:
+        if has_hist:
             from .histdata import HistStore
-            candles = HistStore().load_candles(
-                inst, "M15", limit=preset.get("bars", 4200))
+            candles = HistStore().load_candles(inst, "M15", limit=None)  # 全部
             if candles:
                 source_used = "hist"
         if not candles:
-            if preset["source"] == "hist":
-                error = ("この通貨ペアの長期データが未取り込みです。"
-                         "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
-            else:
+            if days is not None and days <= 60:
                 from .market_data import YahooMarketData
                 candles = YahooMarketData().get_candles(
                     inst, settings.trigger_granularity,
                     count=5000, range_override="60d")
                 source_used = "yahoo"
+            else:
+                error = ("この通貨ペアの長期データが未取り込みです。"
+                         "「長期データは未取り込みです → こちらから取り込む」から取り込んでください。")
 
         if error is None:
             df = candles_to_df(candles)
             if len(df) < max(settings.ema_slow, 60):
                 error = "過去データが不足しています（別の通貨ペア/期間をお試しください）。"
             else:
-                data_from = df.index[0].strftime("%Y-%m-%d")
+                # 集計開始（直近N日）。全データがN日に満たなければ全体を使う。
+                count_from = None
+                if days is not None:
+                    cf = df.index[-1] - pd.Timedelta(days=days)
+                    if cf > df.index[0]:
+                        count_from = cf
+                data_from = (count_from or df.index[0]).strftime("%Y-%m-%d")
                 data_to = df.index[-1].strftime("%Y-%m-%d")
                 bt = Backtester(settings, spread_pips=form["spread_pips"],
                                 slippage_pips=form["slippage_pips"])
-                result = bt.run(form["instrument"], df)
+                result = bt.run(form["instrument"], df, count_from=count_from)
                 summary = result.summary()
                 equity = _equity_curve(result)
     except Exception as exc:  # noqa: BLE001

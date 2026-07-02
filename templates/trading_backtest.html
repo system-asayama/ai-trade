@@ -16,7 +16,11 @@
         <option value="{{ inst }}" {{ 'selected' if form.instrument == inst else '' }}>{{ inst }}</option>
       {% endfor %}
     </select>
-    <label>期間（短いほど速い・タイムアウトしにくい）</label>
+    <label>集計期間（直近◯◯）</label>
+    <p class="muted" style="margin:2px 0 6px;">
+      どの期間でも取り込み済みの全データで一度シミュレーションし、直近の指定期間だけを集計します。
+      そのため「短い期間は長い期間の一部分」になり、期間の選び方で成績が食い違いません。
+    </p>
     <select name="period">
       {% for key, p in periods.items() %}
         <option value="{{ key }}" {{ 'selected' if form.period == key else '' }}>{{ p.label }}</option>
