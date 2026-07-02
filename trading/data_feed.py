@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 
 from .config import Settings
@@ -30,26 +31,37 @@ def candles_to_df(candles: List[Dict[str, Any]], price: str = "mid") -> pd.DataF
     index は UTC の DatetimeIndex。未確定足(complete=False)は除外する。
     price: 'mid' / 'bid' / 'ask'（candle 内のキー mid/bid/ask に対応）。
     """
-    rows = []
+    times: List[Any] = []
+    opens: List[Any] = []
+    highs: List[Any] = []
+    lows: List[Any] = []
+    closes: List[Any] = []
+    vols: List[Any] = []
     for c in candles:
         if not c.get("complete", False):
             continue
         ohlc = c.get(price) or c.get("mid")
         if ohlc is None:
             continue
-        rows.append(
-            {
-                "time": pd.to_datetime(c["time"], utc=True),
-                "open": float(ohlc["o"]),
-                "high": float(ohlc["h"]),
-                "low": float(ohlc["l"]),
-                "close": float(ohlc["c"]),
-                "volume": float(c.get("volume", 0)),
-            }
-        )
-    if not rows:
+        times.append(c["time"])
+        opens.append(ohlc["o"])
+        highs.append(ohlc["h"])
+        lows.append(ohlc["l"])
+        closes.append(ohlc["c"])
+        vols.append(c.get("volume", 0))
+    if not times:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-    df = pd.DataFrame(rows).set_index("time").sort_index()
+    # 時刻は1本ずつ pd.to_datetime せず、まとめて一括変換（長期データで桁違いに速い）
+    df = pd.DataFrame(
+        {
+            "time": pd.to_datetime(times, utc=True),
+            "open": np.asarray(opens, dtype=float),
+            "high": np.asarray(highs, dtype=float),
+            "low": np.asarray(lows, dtype=float),
+            "close": np.asarray(closes, dtype=float),
+            "volume": np.asarray(vols, dtype=float),
+        }
+    ).set_index("time").sort_index()
     return df
 
 
