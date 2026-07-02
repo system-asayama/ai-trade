@@ -332,7 +332,7 @@ def backtest_view():
     return render_template(
         "trading_backtest.html", settings=settings, result=None, compare=None,
         hist=_hist_coverage(), periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS,
-        per_pair=None,
+        per_pair=None, selected_pairs=None,
         form={"instrument": _BT_INSTRUMENTS[0], "period": "60d",
               "spread_pips": 0.8, "slippage_pips": 0.2,
               "f_htf2": False, "f_trail": False, "f_strong": False,
@@ -364,6 +364,7 @@ def backtest_run():
     improved = (f_htf2 or f_trail or f_strong or f_retest or f_rangeok
                 or f_rangestop or f_adx or f_tp or f_ml)
     trail_mult = _fnum(request.form.get("trail_mult"), 3.0)
+    selected_pairs = request.form.getlist("pairs")  # 合算に含めるペア（空=全部）
     form = {
         "instrument": (request.form.get("instrument") or settings.instruments[0]).strip(),
         "period": period_key,
@@ -444,6 +445,8 @@ def backtest_run():
         if inst == "__ALL__":
             # --- 全ペア合算（分散効果を見る） ---
             pairs = [p for p in _BT_INSTRUMENTS if p in cov]
+            if selected_pairs:  # 明示的に選ばれたペアだけに絞る
+                pairs = [p for p in pairs if p in selected_pairs]
             if not pairs:
                 error = ("合算するには長期データを取り込んだ通貨ペアが必要です。"
                          "「追加で取り込む」から複数ペアを取り込んでください。")
@@ -502,6 +505,7 @@ def backtest_run():
         periods=_BT_PERIODS, instruments=_BT_INSTRUMENTS, result=result,
         summary=summary, analytics=analytics, diagnosis=diagnosis, equity=equity,
         error=error, compare=compare, per_pair=per_pair,
+        selected_pairs=selected_pairs,
         data_from=data_from, data_to=data_to, source_used=source_used)
 
 

@@ -21,6 +21,17 @@
       「全ペア合算」は取り込み済みの全通貨ペアで同時に検証し、資産曲線を合算します。
       値動きの異なるペアに分散すると凸凹が打ち消し合い、なめらかになります。
     </p>
+    {% if hist %}
+    <div class="muted" style="margin:2px 0 8px; line-height:1.9;">
+      合算に含めるペア（「全ペア合算」選択時のみ有効。手法に合わないペアは外せます）:<br>
+      {% for inst in hist.keys() %}
+        <label style="font-weight:normal; margin-right:12px; white-space:nowrap;">
+          <input type="checkbox" name="pairs" value="{{ inst }}"
+            {{ 'checked' if (not selected_pairs) or (inst in selected_pairs) else '' }}> {{ inst }}
+        </label>
+      {% endfor %}
+    </div>
+    {% endif %}
     <label>集計期間（直近◯◯）</label>
     <p class="muted" style="margin:2px 0 6px;">
       どの期間でも取り込み済みの全データで一度シミュレーションし、直近の指定期間だけを集計します。
